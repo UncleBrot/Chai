@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    image: chai-bot:latest
+    container_name: chai-discord-bot
+    restart: unless-stopped
+    environment:
+      - Discord_Token=${Discord_Token}
+      - DB_PATH=/data/confessions.db
+    volumes:
+      - bot-data:/data
+
+volumes:
+  bot-data:

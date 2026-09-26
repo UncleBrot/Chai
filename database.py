@@ -1,6 +1,10 @@
+import os
 import aiosqlite
 
-DB_PATH = "confessions.db"
+DB_PATH = os.getenv("DB_PATH", "confessions.db")
+db_dir = os.path.dirname(DB_PATH)
+if db_dir:
+    os.makedirs(db_dir, exist_ok=True)
 
 
 async def init_db():
