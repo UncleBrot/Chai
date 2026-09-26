@@ -45,8 +45,21 @@ def compress_image_bytes(out_bytes: io.BytesIO, filename: str, is_animated: bool
     return out_bytes
 
 
+MAX_PROCESS_WIDTH = 800  # cap source images before processing to keep PIL fast
+
+
+def _prescale(img: Image.Image, max_width: int = MAX_PROCESS_WIDTH) -> Image.Image:
+    """Downscale image to max_width if it's wider, preserving aspect ratio."""
+    if img.width > max_width:
+        ratio = max_width / img.width
+        new_size = (max_width, int(img.height * ratio))
+        img = img.resize(new_size, Image.LANCZOS)
+    return img
+
+
 def process_caption_image(img_bytes: bytes, text: str) -> tuple[io.BytesIO, str, bool]:
     base_img = Image.open(io.BytesIO(img_bytes))
+    base_img = _prescale(base_img)  # cap size before any work
     is_animated = getattr(base_img, "is_animated", False)
     width, height = base_img.size
 
@@ -106,6 +119,7 @@ def process_caption_image(img_bytes: bytes, text: str) -> tuple[io.BytesIO, str,
 
 def process_gif_image(img_bytes: bytes) -> tuple[io.BytesIO, str, bool]:
     base_img = Image.open(io.BytesIO(img_bytes))
+    base_img = _prescale(base_img)  # cap size before any work
     is_animated = getattr(base_img, "is_animated", False)
     out_bytes = io.BytesIO()
 
@@ -181,27 +195,26 @@ class ImagesCog(commands.Cog):
         """Upload to R2, build an embed, and send it.
         Falls back to a Discord attachment if R2 is unavailable.
         Returns the public R2 URL on success, None on fallback."""
-        content_type = "image/gif" if (is_animated or filename.endswith(".gif")) else "image/png"
+
         size_kb = len(out_bytes.getvalue()) / 1024
 
-        # --- Try R2 first ---
+        # Always send via Discord file attachment so the image can never disappear.
+        # The embed references it with attachment:// which Discord serves directly.
+        out_bytes.seek(0)
+        file = discord.File(fp=out_bytes, filename=filename)
+        embed = discord.Embed(title=title, color=discord.Color.blurple())
+        embed.set_image(url=f"attachment://{filename}")
+        embed.set_footer(text=f"Requested by {author_name} | {size_kb:.1f} KB")
+        await send_func(embed=embed, file=file)
+
+        # Fire-and-forget R2 upload in the background (used for gif logging)
+        content_type = "image/gif" if (is_animated or filename.endswith(".gif")) else "image/png"
         try:
             r2_url = await upload_image_to_r2(out_bytes.getvalue(), filename, content_type)
-            embed = discord.Embed(title=title, color=discord.Color.blurple())
-            embed.set_image(url=r2_url)
-            embed.set_footer(text=f"Requested by {author_name} | {size_kb:.1f} KB")
-            await send_func(embed=embed)
             return r2_url
         except Exception as r2_err:
-            print(f"[images] R2 upload failed ({r2_err}), falling back to Discord attachment.")
-
-        # --- Fallback: send as Discord file attachment ---
-        out_bytes.seek(0)
-        await send_func(
-            content=f"_{title}_ — {size_kb:.1f} KB",
-            file=discord.File(fp=out_bytes, filename=filename),
-        )
-        return None
+            print(f"[images] R2 upload failed ({r2_err}).")
+            return None
 
     async def _log_gif(
         self,
