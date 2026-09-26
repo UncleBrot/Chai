@@ -92,7 +92,6 @@ class ConfessionModal(discord.ui.Modal, title="Submit a Confession"):
     def __init__(self):
         super().__init__()
         self.attachment = discord.ui.FileUpload(
-            label="Attachment (optional)",
             required=False,
             min_values=0,
             max_values=1,
@@ -117,7 +116,6 @@ class ReplyModal(discord.ui.Modal, title="Reply to Confession"):
         super().__init__()
         self.confession_id = confession_id
         self.attachment = discord.ui.FileUpload(
-            label="Attachment (optional)",
             required=False,
             min_values=0,
             max_values=1,
