@@ -81,20 +81,28 @@ class StaticButtonsView(discord.ui.View):
 # Modals (the "popup" prompts)
 # ---------------------------------------------------------------------------
 
-class ConfessionModal(discord.ui.Modal, title="New Confession"):
+class ConfessionModal(discord.ui.Modal, title="Submit a Confession"):
     content = discord.ui.TextInput(
-        label="Your confession",
+        label="Confession Content *",
         style=discord.TextStyle.paragraph,
         max_length=2000,
         required=True,
     )
 
-    def __init__(self, image: discord.Attachment | None = None):
+    def __init__(self):
         super().__init__()
-        self.image = image
+        self.attachment = discord.ui.FileUpload(
+            label="Attachment (optional)",
+            required=False,
+            min_values=0,
+            max_values=1,
+            custom_id="confession_attachment"
+        )
+        self.add_item(self.attachment)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await post_confession(interaction, self.content.value, self.image)
+        image = self.attachment.values[0] if self.attachment.values else None
+        await post_confession(interaction, self.content.value, image)
 
 
 class ReplyModal(discord.ui.Modal, title="Reply to Confession"):
@@ -108,9 +116,18 @@ class ReplyModal(discord.ui.Modal, title="Reply to Confession"):
     def __init__(self, confession_id: int):
         super().__init__()
         self.confession_id = confession_id
+        self.attachment = discord.ui.FileUpload(
+            label="Attachment (optional)",
+            required=False,
+            min_values=0,
+            max_values=1,
+            custom_id="reply_attachment"
+        )
+        self.add_item(self.attachment)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await post_reply(interaction, self.confession_id, self.content.value)
+        image = self.attachment.values[0] if self.attachment.values else None
+        await post_reply(interaction, self.confession_id, self.content.value, image)
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +208,7 @@ async def post_confession(
                 pass
 
 
-async def post_reply(interaction: discord.Interaction, confession_id: int, text: str):
+async def post_reply(interaction: discord.Interaction, confession_id: int, text: str, image: discord.Attachment | None = None):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     confession = await db.get_confession(confession_id)
@@ -228,10 +245,19 @@ async def post_reply(interaction: discord.Interaction, confession_id: int, text:
             return
 
     is_op = interaction.user.id == confession["author_id"]
-    label = "**(OP)**" if is_op else "**Anonymous**"
+    
+    embed = discord.Embed(
+        description=text,
+        color=discord.Color.dark_purple(),
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.set_author(name=f"Anonymous Reply {'(OP)' if is_op else ''}")
+    embed.set_footer(text=f"Replying to Confession #{confession['number']}")
+    if image is not None:
+        embed.set_image(url=image.url)
 
     try:
-        await thread.send(f"{label}: {text}")
+        await thread.send(embed=embed)
     except discord.Forbidden:
         await interaction.followup.send("I can't post in that thread.", ephemeral=True)
         return
@@ -334,13 +360,9 @@ async def setup_cmd(interaction: discord.Interaction):
 
 
 @bot.tree.command(name="confess", description="Send an anonymous confession")
-@app_commands.describe(image="Optional image to attach")
 @app_commands.guild_only()
-async def confess_cmd(interaction: discord.Interaction, image: discord.Attachment | None = None):
-    if image is not None and not (image.content_type or "").startswith("image/"):
-        await interaction.response.send_message("That attachment isn't an image.", ephemeral=True)
-        return
-    await interaction.response.send_modal(ConfessionModal(image=image))
+async def confess_cmd(interaction: discord.Interaction):
+    await interaction.response.send_modal(ConfessionModal())
 
 
 @confess_cmd.error
