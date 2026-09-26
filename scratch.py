@@ -1,4 +1,5 @@
-import inspect
-import discord.ui
+import asyncio
+from bot import ConfessionModal
 
-print(inspect.signature(discord.ui.FileUpload.__init__))
+m = ConfessionModal()
+print(m.to_dict())

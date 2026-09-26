@@ -99,12 +99,12 @@ class ConfessionModal(discord.ui.Modal, title="Submit a Confession"):
         )
         self.add_item(self.attachment)
 
-    def to_components(self) -> list[dict]:
-        components = super().to_components()
-        for i, c in enumerate(components):
-            if c.get("type") == 11:  # FileUpload
-                components[i] = {"type": 1, "components": [c]}
-        return components
+    def to_dict(self):
+        payload = super().to_dict()
+        for i, c in enumerate(payload.get("components", [])):
+            if c.get("type") != 1:
+                payload["components"][i] = {"type": 1, "components": [c]}
+        return payload
 
     async def on_submit(self, interaction: discord.Interaction):
         image = self.attachment.values[0] if self.attachment.values else None
@@ -130,12 +130,12 @@ class ReplyModal(discord.ui.Modal, title="Reply to Confession"):
         )
         self.add_item(self.attachment)
 
-    def to_components(self) -> list[dict]:
-        components = super().to_components()
-        for i, c in enumerate(components):
-            if c.get("type") == 11:  # FileUpload
-                components[i] = {"type": 1, "components": [c]}
-        return components
+    def to_dict(self):
+        payload = super().to_dict()
+        for i, c in enumerate(payload.get("components", [])):
+            if c.get("type") != 1:
+                payload["components"][i] = {"type": 1, "components": [c]}
+        return payload
 
     async def on_submit(self, interaction: discord.Interaction):
         image = self.attachment.values[0] if self.attachment.values else None
