@@ -16,6 +16,12 @@ intents.message_content = True  # required for the !sync prefix command
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
+async def setup_hook():
+    await bot.load_extension("cogs.images")
+
+bot.setup_hook = setup_hook
+
+
 # ---------------------------------------------------------------------------
 # Persistent buttons attached to every confession message
 # ---------------------------------------------------------------------------
