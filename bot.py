@@ -83,32 +83,18 @@ class StaticButtonsView(discord.ui.View):
 
 class ConfessionModal(discord.ui.Modal, title="Submit a Confession"):
     content = discord.ui.TextInput(
-        label="Confession Content *",
+        label="Confession Content",
         style=discord.TextStyle.paragraph,
         max_length=2000,
         required=True,
     )
 
-    def __init__(self):
+    def __init__(self, image: discord.Attachment | None = None):
         super().__init__()
-        self.attachment = discord.ui.FileUpload(
-            required=False,
-            min_values=0,
-            max_values=1,
-            custom_id="confession_attachment"
-        )
-        self.add_item(self.attachment)
-
-    def to_dict(self):
-        payload = super().to_dict()
-        for i, c in enumerate(payload.get("components", [])):
-            if c.get("type") != 1:
-                payload["components"][i] = {"type": 1, "components": [c]}
-        return payload
+        self.image = image
 
     async def on_submit(self, interaction: discord.Interaction):
-        image = self.attachment.values[0] if self.attachment.values else None
-        await post_confession(interaction, self.content.value, image)
+        await post_confession(interaction, self.content.value, self.image)
 
 
 class ReplyModal(discord.ui.Modal, title="Reply to Confession"):
@@ -122,24 +108,9 @@ class ReplyModal(discord.ui.Modal, title="Reply to Confession"):
     def __init__(self, confession_id: int):
         super().__init__()
         self.confession_id = confession_id
-        self.attachment = discord.ui.FileUpload(
-            required=False,
-            min_values=0,
-            max_values=1,
-            custom_id="reply_attachment"
-        )
-        self.add_item(self.attachment)
-
-    def to_dict(self):
-        payload = super().to_dict()
-        for i, c in enumerate(payload.get("components", [])):
-            if c.get("type") != 1:
-                payload["components"][i] = {"type": 1, "components": [c]}
-        return payload
 
     async def on_submit(self, interaction: discord.Interaction):
-        image = self.attachment.values[0] if self.attachment.values else None
-        await post_reply(interaction, self.confession_id, self.content.value, image)
+        await post_reply(interaction, self.confession_id, self.content.value)
 
 
 # ---------------------------------------------------------------------------
@@ -372,9 +343,13 @@ async def setup_cmd(interaction: discord.Interaction):
 
 
 @bot.tree.command(name="confess", description="Send an anonymous confession")
+@app_commands.describe(image="Optional image to attach to your confession")
 @app_commands.guild_only()
-async def confess_cmd(interaction: discord.Interaction):
-    await interaction.response.send_modal(ConfessionModal())
+async def confess_cmd(interaction: discord.Interaction, image: discord.Attachment | None = None):
+    if image is not None and not (image.content_type or "").startswith("image/"):
+        await interaction.response.send_message("That attachment isn't an image.", ephemeral=True)
+        return
+    await interaction.response.send_modal(ConfessionModal(image=image))
 
 
 @confess_cmd.error
