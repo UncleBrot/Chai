@@ -280,7 +280,7 @@ async def post_reply(interaction: discord.Interaction, confession_id: int, text:
         embed.set_image(url=image.url)
 
     try:
-        await thread.send(embed=embed)
+        reply_message = await thread.send(embed=embed)
     except discord.Forbidden:
         await interaction.followup.send("I can't post in that thread.", ephemeral=True)
         return
@@ -288,6 +288,30 @@ async def post_reply(interaction: discord.Interaction, confession_id: int, text:
     await interaction.followup.send(
         "Your reply was posted anonymously in the thread.", ephemeral=True
     )
+
+    if settings and settings["log_channel_id"]:
+        log_channel = guild.get_channel(settings["log_channel_id"])
+        if log_channel is not None:
+            log_embed = discord.Embed(
+                description=text,
+                color=discord.Color.orange(),
+                timestamp=discord.utils.utcnow(),
+            )
+            log_embed.set_author(
+                name=f"{interaction.user} ({interaction.user.id})",
+                icon_url=interaction.user.display_avatar.url,
+            )
+            log_embed.add_field(name="Replied to Confession", value=f"#{confession['number']}")
+            log_embed.add_field(name="OP?", value="Yes" if is_op else "No")
+            log_embed.add_field(
+                name="Jump to reply", value=reply_message.jump_url, inline=False
+            )
+            if image is not None:
+                log_embed.set_image(url=image.url)
+            try:
+                await log_channel.send(embed=log_embed)
+            except discord.Forbidden:
+                pass
 
 
 # ---------------------------------------------------------------------------
