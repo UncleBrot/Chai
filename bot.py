@@ -92,9 +92,30 @@ class ConfessionModal(discord.ui.Modal, title="Submit a Confession"):
     def __init__(self, image: discord.Attachment | None = None):
         super().__init__()
         self.image = image
+        self.attachment = discord.ui.FileUpload(
+            required=False,
+            min_values=0,
+            max_values=1,
+            custom_id="confession_attachment",
+        )
+        self.add_item(self.attachment)
+
+    def to_components(self) -> list[dict]:
+        components = super().to_components()
+        # discord.py dumps FileUpload raw as type 19, but Discord requires it
+        # wrapped inside a Label container (type 18) with a "component" key.
+        for i, c in enumerate(components):
+            if c.get("type") == 19:
+                components[i] = {
+                    "type": 18,
+                    "label": "Attachment (optional)",
+                    "component": c,
+                }
+        return components
 
     async def on_submit(self, interaction: discord.Interaction):
-        await post_confession(interaction, self.content.value, self.image)
+        uploaded = self.attachment.values[0] if self.attachment.values else None
+        await post_confession(interaction, self.content.value, uploaded or self.image)
 
 
 class ReplyModal(discord.ui.Modal, title="Reply to Confession"):
@@ -108,9 +129,28 @@ class ReplyModal(discord.ui.Modal, title="Reply to Confession"):
     def __init__(self, confession_id: int):
         super().__init__()
         self.confession_id = confession_id
+        self.attachment = discord.ui.FileUpload(
+            required=False,
+            min_values=0,
+            max_values=1,
+            custom_id="reply_attachment",
+        )
+        self.add_item(self.attachment)
+
+    def to_components(self) -> list[dict]:
+        components = super().to_components()
+        for i, c in enumerate(components):
+            if c.get("type") == 19:
+                components[i] = {
+                    "type": 18,
+                    "label": "Attachment (optional)",
+                    "component": c,
+                }
+        return components
 
     async def on_submit(self, interaction: discord.Interaction):
-        await post_reply(interaction, self.confession_id, self.content.value)
+        image = self.attachment.values[0] if self.attachment.values else None
+        await post_reply(interaction, self.confession_id, self.content.value, image)
 
 
 # ---------------------------------------------------------------------------
