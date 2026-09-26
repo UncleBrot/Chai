@@ -99,6 +99,13 @@ class ConfessionModal(discord.ui.Modal, title="Submit a Confession"):
         )
         self.add_item(self.attachment)
 
+    def to_components(self) -> list[dict]:
+        components = super().to_components()
+        for i, c in enumerate(components):
+            if c.get("type") == 11:  # FileUpload
+                components[i] = {"type": 1, "components": [c]}
+        return components
+
     async def on_submit(self, interaction: discord.Interaction):
         image = self.attachment.values[0] if self.attachment.values else None
         await post_confession(interaction, self.content.value, image)
@@ -122,6 +129,13 @@ class ReplyModal(discord.ui.Modal, title="Reply to Confession"):
             custom_id="reply_attachment"
         )
         self.add_item(self.attachment)
+
+    def to_components(self) -> list[dict]:
+        components = super().to_components()
+        for i, c in enumerate(components):
+            if c.get("type") == 11:  # FileUpload
+                components[i] = {"type": 1, "components": [c]}
+        return components
 
     async def on_submit(self, interaction: discord.Interaction):
         image = self.attachment.values[0] if self.attachment.values else None
@@ -396,6 +410,7 @@ async def on_ready():
     await db.init_db()
     bot.add_dynamic_items(ReplyButton)
     bot.add_view(StaticButtonsView())
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="Brot"))
     print(f"Logged in as {bot.user} ({bot.user.id})")
 
 

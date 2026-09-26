@@ -59,3 +59,12 @@ After setup, users can use the `/confess` slash command (or the static Confess b
 
 ## Contributing
 Since this is a public repository, please ensure that you **never** commit your `.env` file or `confessions.db` to version control. These files are ignored by `.gitignore` by default.
+
+---
+
+## About
+**Made by @CaptainBrot**
+
+- **Email:** [hello@unclebrot.xyz](mailto:hello@unclebrot.xyz)
+- **Invite the Bot:** [Click here to invite](https://discord.com/oauth2/authorize?client_id=1553385571412607069)
+- **GitHub Repository:** [UncleBrot/Chai](https://github.com/UncleBrot/Chai)
