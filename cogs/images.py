@@ -22,21 +22,28 @@ async def download_image(url: str) -> bytes:
 
 def compress_image_bytes(out_bytes: io.BytesIO, filename: str, is_animated: bool, max_size: int = 500 * 1024) -> io.BytesIO:
     while len(out_bytes.getvalue()) > max_size:
+        out_bytes.seek(0)
         base_img = Image.open(out_bytes)
         if base_img.width < 100 or base_img.height < 100:
             break
         
         compressed_bytes = io.BytesIO()
-        if is_animated:
-            frames = []
-            durations = []
-            for frame_idx in range(base_img.n_frames):
-                base_img.seek(frame_idx)
-                durations.append(base_img.info.get('duration', 100))
-                frame_copy = base_img.copy().convert("RGB")
+        if is_animated or filename.endswith(".gif"):
+            n_frames = getattr(base_img, "n_frames", 1)
+            if n_frames > 1:
+                frames = []
+                durations = []
+                for frame_idx in range(n_frames):
+                    base_img.seek(frame_idx)
+                    durations.append(base_img.info.get('duration', 100))
+                    frame_copy = base_img.copy().convert("RGB")
+                    frame_copy = frame_copy.resize((int(frame_copy.width * 0.8), int(frame_copy.height * 0.8)), Image.LANCZOS)
+                    frames.append(frame_copy)
+                frames[0].save(compressed_bytes, format="GIF", save_all=True, append_images=frames[1:], duration=durations, loop=0)
+            else:
+                frame_copy = base_img.convert("RGB")
                 frame_copy = frame_copy.resize((int(frame_copy.width * 0.8), int(frame_copy.height * 0.8)), Image.LANCZOS)
-                frames.append(frame_copy)
-            frames[0].save(compressed_bytes, format="GIF", save_all=True, append_images=frames[1:], duration=durations, loop=0)
+                frame_copy.save(compressed_bytes, format="GIF")
         else:
             base_img = base_img.convert("RGBA")
             base_img = base_img.resize((int(base_img.width * 0.8), int(base_img.height * 0.8)), Image.LANCZOS)
@@ -45,6 +52,7 @@ def compress_image_bytes(out_bytes: io.BytesIO, filename: str, is_animated: bool
         compressed_bytes.seek(0)
         out_bytes = compressed_bytes
         
+    out_bytes.seek(0)
     return out_bytes
 
 def process_caption_image(img_bytes: bytes, text: str) -> tuple[io.BytesIO, str, bool]:
@@ -129,7 +137,7 @@ def process_gif_image(img_bytes: bytes) -> tuple[io.BytesIO, str, bool]:
         base_img.save(out_bytes, format="GIF")
         
     out_bytes.seek(0)
-    out_bytes = compress_image_bytes(out_bytes, "image.gif", True)
+    out_bytes = compress_image_bytes(out_bytes, "image.gif", is_animated)
     return out_bytes, "image.gif", True
 
 class ImagesCog(commands.Cog):
@@ -154,12 +162,34 @@ class ImagesCog(commands.Cog):
     async def handle_image_upload(self, out_bytes: io.BytesIO, filename: str, is_animated: bool, title: str, author_name: str, send_func) -> str | None:
         try:
             content_type = "image/gif" if is_animated or filename.endswith('.gif') else "image/png"
-            size_kb = len(out_bytes.getvalue()) / 1024
-            r2_url = await upload_image_to_r2(out_bytes.getvalue(), filename, content_type)
+            raw_bytes = out_bytes.getvalue()
+            size_kb = len(raw_bytes) / 1024
+            r2_url = await upload_image_to_r2(raw_bytes, filename, content_type)
+
+            # Warm Cloudflare R2 edge cache so Discord's media proxy gets an immediate cache hit
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(r2_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                        await resp.read()
+            except Exception:
+                pass
+
             embed = discord.Embed(title=title)
             embed.set_image(url=r2_url)
             embed.set_footer(text=f"Requested by {author_name} | Size: {size_kb:.1f} KB")
-            await send_func(embed=embed)
+            msg = await send_func(embed=embed)
+
+            # Deferred slash command responses (PATCH @original) can fail to unfurl a brand-new external URL
+            # on the first try; re-editing the message triggers Discord to display the proxied image.
+            if isinstance(msg, discord.Message) and msg.embeds:
+                img = msg.embeds[0].image
+                if not img or not img.proxy_url or not img.width:
+                    await asyncio.sleep(1.0)
+                    try:
+                        await msg.edit(embed=embed)
+                    except Exception:
+                        pass
+
             return r2_url
         except Exception as e:
             size_kb = len(out_bytes.getvalue()) / 1024
@@ -220,7 +250,11 @@ class ImagesCog(commands.Cog):
             await interaction.response.defer()
             img_bytes = await download_image(image.url)
             out_bytes, filename, is_animated = await asyncio.to_thread(process_caption_image, img_bytes, text)
-            await self.handle_image_upload(out_bytes, filename, is_animated, "Captioned Image", interaction.user.display_name, interaction.followup.send)
+
+            async def followup_send(**kwargs):
+                return await interaction.followup.send(**kwargs, wait=True)
+
+            await self.handle_image_upload(out_bytes, filename, is_animated, "Captioned Image", interaction.user.display_name, followup_send)
         except Exception as e:
             await interaction.followup.send(f"⚠️ Error: `{e}`")
 
@@ -246,7 +280,11 @@ class ImagesCog(commands.Cog):
             await interaction.response.defer()
             img_bytes = await download_image(image.url)
             out_bytes, filename, is_animated = await asyncio.to_thread(process_gif_image, img_bytes)
-            r2_url = await self.handle_image_upload(out_bytes, filename, is_animated, "GIF Conversion", interaction.user.display_name, interaction.followup.send)
+
+            async def followup_send(**kwargs):
+                return await interaction.followup.send(**kwargs, wait=True)
+
+            r2_url = await self.handle_image_upload(out_bytes, filename, is_animated, "GIF Conversion", interaction.user.display_name, followup_send)
             await self._log_gif(interaction.user, r2_url, "/gif (slash)")
         except Exception as e:
             await interaction.followup.send(f"⚠️ Error: `{e}`")
