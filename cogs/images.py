@@ -17,6 +17,7 @@ from utils.r2 import upload_image_to_r2
 
 def compress_image_bytes(out_bytes: io.BytesIO, filename: str, is_animated: bool, max_size: int = 500 * 1024) -> io.BytesIO:
     while len(out_bytes.getvalue()) > max_size:
+        out_bytes.seek(0)
         base_img = Image.open(out_bytes)
         if base_img.width < 100 or base_img.height < 100:
             break
@@ -24,14 +25,18 @@ def compress_image_bytes(out_bytes: io.BytesIO, filename: str, is_animated: bool
         compressed_bytes = io.BytesIO()
         if is_animated:
             frames, durations = [], []
-            for i in range(base_img.n_frames):
+            n_frames = getattr(base_img, "n_frames", 1)
+            for i in range(n_frames):
                 base_img.seek(i)
                 durations.append(base_img.info.get('duration', 100))
                 f = base_img.copy().convert("RGB")
                 f = f.resize((int(f.width * 0.8), int(f.height * 0.8)), Image.LANCZOS)
                 frames.append(f)
-            frames[0].save(compressed_bytes, format="GIF", save_all=True,
-                           append_images=frames[1:], duration=durations, loop=0)
+            if len(frames) > 1:
+                frames[0].save(compressed_bytes, format="GIF", save_all=True,
+                               append_images=frames[1:], duration=durations, loop=0)
+            else:
+                frames[0].save(compressed_bytes, format="GIF")
         else:
             base_img = base_img.convert("RGBA")
             base_img = base_img.resize(
@@ -42,6 +47,7 @@ def compress_image_bytes(out_bytes: io.BytesIO, filename: str, is_animated: bool
         compressed_bytes.seek(0)
         out_bytes = compressed_bytes
 
+    out_bytes.seek(0)
     return out_bytes
 
 
@@ -192,28 +198,28 @@ class ImagesCog(commands.Cog):
         author_name: str,
         send_func,
     ) -> str | None:
-        """Upload to R2, build an embed, and send it.
-        Falls back to a Discord attachment if R2 is unavailable.
-        Returns the public R2 URL on success, None on fallback."""
+        """Send the image embed via Discord attachment and upload to Cloudflare R2.
+        Returns the public R2 URL on success, None if R2 is unavailable."""
 
-        size_kb = len(out_bytes.getvalue()) / 1024
+        # Extract raw bytes BEFORE discord.File closes the stream after sending
+        raw_bytes = out_bytes.getvalue()
+        size_kb = len(raw_bytes) / 1024
 
         # Always send via Discord file attachment so the image can never disappear.
         # The embed references it with attachment:// which Discord serves directly.
-        out_bytes.seek(0)
-        file = discord.File(fp=out_bytes, filename=filename)
+        file = discord.File(fp=io.BytesIO(raw_bytes), filename=filename)
         embed = discord.Embed(title=title, color=discord.Color.blurple())
         embed.set_image(url=f"attachment://{filename}")
         embed.set_footer(text=f"Requested by {author_name} | {size_kb:.1f} KB")
         await send_func(embed=embed, file=file)
 
-        # Fire-and-forget R2 upload in the background (used for gif logging)
+        # Upload raw_bytes to Cloudflare R2
         content_type = "image/gif" if (is_animated or filename.endswith(".gif")) else "image/png"
         try:
-            r2_url = await upload_image_to_r2(out_bytes.getvalue(), filename, content_type)
+            r2_url = await upload_image_to_r2(raw_bytes, filename, content_type)
             return r2_url
         except Exception as r2_err:
-            print(f"[images] R2 upload failed ({r2_err}).")
+            print(f"[images] R2 upload failed ({type(r2_err).__name__}: {r2_err}).")
             return None
 
     async def _log_gif(
@@ -226,7 +232,10 @@ class ImagesCog(commands.Cog):
             return
         channel = self.bot.get_channel(self._img_log_channel_id)
         if channel is None:
-            return
+            try:
+                channel = await self.bot.fetch_channel(self._img_log_channel_id)
+            except Exception:
+                return
         embed = discord.Embed(
             title="GIF Command Used",
             color=discord.Color.green(),
