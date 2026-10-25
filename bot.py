@@ -9,16 +9,45 @@ import database as db
 
 load_dotenv()
 TOKEN = os.getenv("Discord_Token")
+OWNER_ID = int(os.getenv("OWNER_ID", "762609713610620948"))
 
 intents = discord.Intents.default()
-intents.message_content = True  # required for the !sync prefix command
+intents.message_content = True  # required for prefix commands
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents,
+    owner_id=OWNER_ID,
+    help_command=None,
+)
+
+
+@bot.check
+async def global_prefix_blacklist_check(ctx: commands.Context) -> bool:
+    if ctx.author.id == OWNER_ID:
+        return True
+    return not db.is_blacklisted(ctx.author.id)
+
+
+async def global_interaction_blacklist_check(interaction: discord.Interaction) -> bool:
+    if interaction.user.id == OWNER_ID:
+        return True
+    if db.is_blacklisted(interaction.user.id):
+        await interaction.response.send_message(
+            "🚫 You are blacklisted from using this bot.", ephemeral=True
+        )
+        return False
+    return True
+
+
+bot.tree.interaction_check = global_interaction_blacklist_check
 
 
 async def setup_hook():
     await bot.load_extension("cogs.images")
     await bot.load_extension("cogs.fun")
+    await bot.load_extension("cogs.owner")
+
 
 bot.setup_hook = setup_hook
 
@@ -37,6 +66,11 @@ class ConfessButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != OWNER_ID and db.is_blacklisted(interaction.user.id):
+            await interaction.response.send_message(
+                "🚫 You are blacklisted from using this bot.", ephemeral=True
+            )
+            return
         await interaction.response.send_modal(ConfessionModal())
 
 
@@ -63,6 +97,11 @@ class ReplyButton(
         return cls(int(match["confession_id"]))
 
     async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != OWNER_ID and db.is_blacklisted(interaction.user.id):
+            await interaction.response.send_message(
+                "🚫 You are blacklisted from using this bot.", ephemeral=True
+            )
+            return
         await interaction.response.send_modal(ReplyModal(self.confession_id))
 
 
@@ -441,10 +480,11 @@ async def app_command_error(interaction: discord.Interaction, error: app_command
 # ---------------------------------------------------------------------------
 
 @bot.command(name="sync")
-@commands.is_owner()
 async def sync_cmd(ctx: commands.Context):
+    if ctx.guild is not None or ctx.author.id != OWNER_ID:
+        return
     synced = await bot.tree.sync()
-    await ctx.send(f"Synced {len(synced)} command(s).")
+    await ctx.send(f"✅ Synced {len(synced)} command(s).")
 
 
 # ---------------------------------------------------------------------------

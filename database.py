@@ -8,7 +8,11 @@ if db_dir:
     os.makedirs(db_dir, exist_ok=True)
 
 
+_blacklist_cache: set[int] = set()
+
+
 async def init_db():
+    global _blacklist_cache
     async with aiosqlite.connect(DB_PATH) as conn:
         await conn.execute(
             """
@@ -42,7 +46,57 @@ async def init_db():
             )
             """
         )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS blacklist (
+                user_id INTEGER PRIMARY KEY,
+                reason TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
         await conn.commit()
+
+        cursor = await conn.execute("SELECT user_id FROM blacklist")
+        rows = await cursor.fetchall()
+        _blacklist_cache = {row[0] for row in rows}
+
+
+def is_blacklisted(user_id: int) -> bool:
+    """Fast in-memory check whether a user ID is blacklisted."""
+    return user_id in _blacklist_cache
+
+
+async def add_blacklist(user_id: int, reason: str | None = None):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "INSERT OR REPLACE INTO blacklist (user_id, reason) VALUES (?, ?)",
+            (user_id, reason or "No reason provided"),
+        )
+        await conn.commit()
+    _blacklist_cache.add(user_id)
+
+
+async def remove_blacklist(user_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute(
+            "DELETE FROM blacklist WHERE user_id = ?",
+            (user_id,),
+        )
+        await conn.commit()
+        removed = cursor.rowcount > 0
+    _blacklist_cache.discard(user_id)
+    return removed
+
+
+async def get_blacklist() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            "SELECT user_id, reason, created_at FROM blacklist ORDER BY created_at DESC"
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
 
 
 async def get_or_create_ship(user1_id: int, user2_id: int) -> int:

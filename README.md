@@ -39,6 +39,7 @@ cp .env.example .env
 | Variable | Required | Description |
 |---|---|---|
 | `Discord_Token` | ✅ | Your Discord bot token |
+| `OWNER_ID` | ⬜ | Bot owner's Discord User ID (defaults to `762609713610620948` — **change this to your own User ID if you host the bot!**) |
 | `img_log_id` | ⬜ | Channel ID to log every `!gif` / `/gif` usage |
 | `R2_ENDPOINT_URL` | ⬜ | Cloudflare R2 endpoint URL |
 | `R2_ACCESS_KEY_ID` | ⬜ | R2 API access key ID |
@@ -46,6 +47,8 @@ cp .env.example .env
 | `R2_BUCKET_NAME` | ⬜ | R2 bucket name |
 | `R2_PUBLIC_URL` | ⬜ | Public base URL for your R2 bucket |
 
+> **Note for Self-Hosters:** Make sure to set `OWNER_ID` in your `.env` / Portainer environment variables (or update `DEFAULT_OWNER_ID` in `cogs/owner.py` and `bot.py`, which defaults to `762609713610620948`) to your own Discord User ID so you can access the Owner-Exclusive DM commands.
+>
 > R2 variables are optional. If not set, image outputs fall back to Discord file attachments.
 
 ### 3. Running with Docker / Portainer (Recommended)
@@ -97,10 +100,23 @@ python bot.py
 | `/corporate` | Generate a corporate BS buzzword phrase |
 | `/cat`, `/duck`, `/capybara` | Fetch a random cat, duck, or capybara photo |
 
-### Owner / Dev Commands
+### 👑 Owner-Exclusive Commands (Bot DMs Only)
+All owner commands **only work inside the bot's Direct Messages** and are restricted to `OWNER_ID` (`762609713610620948` by default — change `OWNER_ID` if you host the bot yourself):
+
 | Command | Description |
 |---|---|
-| `!sync` | Sync slash commands to Discord (bot owner only) |
+| `!help` | Show all owner-exclusive DM commands |
+| `!say <channel_id_or_msg_link> <message>` | Make the bot send a message in a channel (or reply to a message link) |
+| `!dm <user_id> <message>` | Send a DM to a user through the bot (incoming DM replies are forwarded to the owner) |
+| `!impersonate <channel_id> <user_id> <message>` | Send a message in a channel using that user's display name and avatar via a temporary webhook |
+| `!getinvite <server_id>` | Generate or retrieve an invite link for any server the bot is in |
+| `!leaveserver <server_id>` | Force the bot to leave a server |
+| `!blacklist add <user_id> [reason]` | Globally block a user from using any bot commands or confessions |
+| `!blacklist remove <user_id>` / `!unblacklist <user_id>` | Remove a user from the global blacklist |
+| `!blacklist list` | List all currently blacklisted users |
+| `!r2stats` | View Cloudflare R2 bucket file counts and total storage usage |
+| `!servers` / `!channels <server_id>` | List all connected servers and text channel IDs |
+| `!sync` | Sync slash commands globally to Discord |
 
 ---
 
@@ -109,12 +125,13 @@ python bot.py
 ```
 .
 ├── bot.py              # Main bot entry point
-├── database.py         # Async SQLite helpers for confessions & ships
+├── database.py         # Async SQLite helpers for confessions, ships & blacklist
 ├── cogs/
 │   ├── images.py       # Image manipulation commands (caption, gif)
-│   └── fun.py          # Tweet, petpet, ship, rizz, roast, animals & steal commands
+│   ├── fun.py          # Tweet, petpet, ship, rizz, roast, animals & steal commands
+│   └── owner.py        # Owner-exclusive DM-only commands
 ├── utils/
-│   └── r2.py           # Cloudflare R2 upload client
+│   └── r2.py           # Cloudflare R2 upload & storage stats client
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
