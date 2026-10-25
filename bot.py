@@ -597,7 +597,7 @@ def build_public_help_embed() -> discord.Embed:
         name="💌 Anonymous Confessions (Server Only)",
         value=(
             "`/confess` — Submit an anonymous confession (supports images)\n"
-            "`/setup` — *(Admin only)* Configure confession & log channels\n"
+            "`/setup` — *(Admin only)* Setup Confessions Channel\n"
             "**Confess / Reply Buttons** — Click the buttons under any confession to post or reply anonymously"
         ),
         inline=False,

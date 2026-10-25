@@ -102,7 +102,7 @@ python bot.py
 | Command | Description |
 |---|---|
 | `/confess` | Open the anonymous confession modal (supports image upload) |
-| `/setup` | *(Admin only)* Configure the server's confession and log channels |
+| `/setup` | *(Admin only)* Setup Confessions Channel |
 | **Confess** button | Persistent button under confession messages to submit a new confession |
 | **Reply** button | Persistent button to reply anonymously inside a confession thread |
 
