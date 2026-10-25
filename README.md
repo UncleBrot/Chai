@@ -82,15 +82,20 @@ python bot.py
 |---|---|
 | `!caption <text>` / `/caption` | Caption an image with a classic white bar |
 | `!gif` / `/gif` | Convert an image to a GIF (uploaded to Cloudflare R2) |
-| `!tweet` / `/tweet` / **Make it a Tweet** | Turn a replied message or text (with custom emojis & attachments) into an X/Twitter card |
-| `!petpet [@user]` / `/petpet` | Generate an animated PetPet GIF of a user's avatar |
-| `!wanted [@user]` / `/wanted` | Put a user on a Wanted poster |
-| `!ship <@user1> [@user2]` / `/ship` | Ship two users together (compatibility score permanently saved in SQLite) |
-| `!rizz [@user]` / `/rizz` | Send a pickup line to a user |
-| `!roast [@user]` / `/roast` | Roast a user |
-| `!corporate` / `/corporate` | Generate a corporate BS buzzword phrase |
-| `!cat` / `/cat`, `!duck` / `/duck`, `!capybara` / `/capybara` | Fetch a random cat, duck, or capybara photo |
+| `!tweet` / `/tweet` / **Make it a Tweet** | Turn a replied message or text into a Tweet via Some Random API |
 | `!steal <emoji>` / `/steal` | *(Manage Expressions)* Steal a custom emoji from another server |
+| `/petpet` | Generate an animated PetPet GIF of a user's avatar |
+| `/amongus` | Eject a user into space (Among Us Impostor GIF) |
+| `/wasted` | Apply the GTA Wasted overlay to a user's avatar |
+| `/horny` | Grant a Horny License card to a user |
+| `/stupid` | Generate an "Oh no, it's so stupid" meme |
+| `/simpcard` | Generate an official Simp Card for a user |
+| `/wanted` | Put a user on a Wanted poster |
+| `/ship` | Ship two users together (compatibility score permanently saved in SQLite) |
+| `/rizz` | Send a pickup line to a user |
+| `/roast` | Roast a user |
+| `/corporate` | Generate a corporate BS buzzword phrase |
+| `/cat`, `/duck`, `/capybara` | Fetch a random cat, duck, or capybara photo |
 
 ### Owner / Dev Commands
 | Command | Description |

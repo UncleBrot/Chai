@@ -2,7 +2,6 @@ import asyncio
 import datetime
 import html
 import io
-import math
 import os
 import random
 import re
@@ -41,6 +40,14 @@ UNICODE_EMOJI_RE = re.compile(
     flags=re.UNICODE,
 )
 
+HTTP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+}
+
 FALLBACK_RIZZ = [
     "Are you a magician? Because whenever I look at you, everyone else disappears.",
     "Do you have a map? Because I just got lost in your eyes.",
@@ -59,7 +66,7 @@ FALLBACK_ROASTS = [
 
 FALLBACK_CORPORATE = [
     "Synergistically leverage cross-platform paradigms to maximize stakeholder value.",
-    "Proactively赋能 scalable deliverables while streamlining mission-critical workflows.",
+    "Proactively scale mission-critical deliverables while streamlining agile workflows.",
     "Holistically orchestrate cloud-native ecosystems for end-to-end digital transformation.",
     "Dynamically benchmark low-hanging fruit to drive hyper-growth KPIs.",
 ]
@@ -107,7 +114,6 @@ def _rounded_image(img: Image.Image, max_width: int, max_height: int, radius: in
 
 
 def _twemoji_codepoint(char_seq: str) -> str:
-    # Strip variation selector-16 if there is no ZWJ, matching Twemoji asset naming
     codepoints = [f"{ord(c):x}" for c in char_seq]
     if "200d" not in codepoints:
         codepoints = [cp for cp in codepoints if cp != "fe0f"]
@@ -115,10 +121,6 @@ def _twemoji_codepoint(char_seq: str) -> str:
 
 
 def _tokenize_tweet_text(text: str) -> list[tuple[str, str]]:
-    """Split text into tokens of type:
-    ('newline', '\\n'), ('space', ' '), ('custom_emoji', emoji_id),
-    ('unicode_emoji', char_seq), ('word', word_str)
-    """
     tokens: list[tuple[str, str]] = []
     lines = text.split("\n")
     for line_idx, line in enumerate(lines):
@@ -150,7 +152,6 @@ def _tokenize_plain_segment(segment: str, tokens: list[tuple[str, str]]):
         for em in UNICODE_EMOJI_RE.finditer(part):
             if em.start() > pos:
                 tokens.append(("word", part[pos : em.start()]))
-            # Split contiguous unicode emojis into individual characters
             for ch in em.group(0):
                 if ord(ch) in (0xFE0F, 0x200D):
                     continue
@@ -169,16 +170,16 @@ def render_tweet_card(
     attachment_bytes: bytes | None,
     timestamp_dt: datetime.datetime,
 ) -> io.BytesIO:
-    """Render a realistic Dark-Mode X/Twitter post card using Pillow."""
+    """Fallback Dark-Mode X/Twitter post card renderer in Pillow."""
     W = 800
     PAD = 36
     CONTENT_W = W - (PAD * 2)
 
-    bg_color = (21, 32, 43)       # Twitter Dim Dark Mode (#15202B)
-    text_white = (247, 249, 249)  # #F7F9F9
-    muted_gray = (139, 152, 165)  # #8B98A5
-    twitter_blue = (29, 155, 240) # #1D9BF0
-    divider_color = (56, 68, 77)  # #38444D
+    bg_color = (21, 32, 43)
+    text_white = (247, 249, 249)
+    muted_gray = (139, 152, 165)
+    twitter_blue = (29, 155, 240)
+    divider_color = (56, 68, 77)
 
     font_name = _load_font(26, bold=True)
     font_handle = _load_font(21, bold=False)
@@ -197,8 +198,6 @@ def render_tweet_card(
     LINE_HEIGHT = 44
     SPACE_W = text_w(" ", font_body)
 
-    # Layout tokens into lines; each line is a list of items:
-    # ('text', str, color) or ('emoji', key)
     lines: list[list[tuple]] = [[]]
     cur_w = 0
 
@@ -222,7 +221,6 @@ def render_tweet_card(
             color = twitter_blue if is_highlight else text_white
             w = text_w(t_val, font_body)
             if w > CONTENT_W:
-                # Break very long words character by character
                 chunk = ""
                 for ch in t_val:
                     if text_w(chunk + ch, font_body) > CONTENT_W and chunk:
@@ -247,7 +245,6 @@ def render_tweet_card(
     if lines == [[]]:
         lines = []
 
-    # Prepare optional attached image
     attached_img = None
     if attachment_bytes:
         try:
@@ -265,14 +262,12 @@ def render_tweet_card(
     canvas = Image.new("RGBA", (W, total_h), bg_color)
     draw = ImageDraw.Draw(canvas)
 
-    # 1. Avatar
     try:
         av_img = _circle_crop(Image.open(io.BytesIO(avatar_bytes)), 68)
         canvas.paste(av_img, (PAD, PAD), av_img)
     except Exception:
         draw.ellipse((PAD, PAD, PAD + 68, PAD + 68), fill=twitter_blue)
 
-    # 2. Display Name + Verified Badge + @username
     name_x = PAD + 68 + 16
     name_y = PAD + 6
     clean_display = display_name[:28]
@@ -281,7 +276,6 @@ def render_tweet_card(
     badge_x = name_x + text_w(clean_display, font_name) + 8
     badge_y = name_y + 4
     draw.ellipse((badge_x, badge_y, badge_x + 24, badge_y + 24), fill=twitter_blue)
-    # Draw white checkmark inside badge
     draw.line(
         [(badge_x + 6, badge_y + 12), (badge_x + 10, badge_y + 17), (badge_x + 18, badge_y + 7)],
         fill=(255, 255, 255),
@@ -290,7 +284,6 @@ def render_tweet_card(
 
     draw.text((name_x, name_y + 34), f"@{username}", font=font_handle, fill=muted_gray)
 
-    # 3. Render Tweet Body (Text + Inline Custom/Unicode Emojis)
     y_cursor = PAD + header_h + 18
     for line in lines:
         x_cursor = PAD
@@ -318,12 +311,10 @@ def render_tweet_card(
     if lines:
         y_cursor += 10
 
-    # 4. Render Attached Media (if any)
     if attached_img:
         canvas.paste(attached_img, (PAD, y_cursor), attached_img)
         y_cursor += attached_img.height + 20
 
-    # 5. Timestamp & Views line
     time_str = timestamp_dt.strftime("%I:%M %p · %b %d, %Y").lstrip("0")
     views_count = f"{random.randint(12, 950)}.{random.randint(1, 9)}K"
     meta_text = f"{time_str} · "
@@ -337,7 +328,6 @@ def render_tweet_card(
     draw.line([(PAD, y_cursor), (W - PAD, y_cursor)], fill=divider_color, width=2)
     y_cursor += 20
 
-    # 6. Retweets, Quotes, Likes, Bookmarks stats
     stats = [
         (f"{random.randint(120, 4200):,}", " Reposts"),
         (f"{random.randint(15, 600):,}", " Quotes"),
@@ -363,7 +353,6 @@ def render_ship_card(avatar1_bytes: bytes, avatar2_bytes: bytes, percentage: int
     bg = Image.new("RGBA", (W, H), (30, 27, 46, 255))
     draw = ImageDraw.Draw(bg)
 
-    # Decorative soft border
     draw.rounded_rectangle((8, 8, W - 9, H - 9), radius=24, outline=(235, 69, 158, 180), width=3)
 
     try:
@@ -378,7 +367,6 @@ def render_ship_card(avatar1_bytes: bytes, avatar2_bytes: bytes, percentage: int
     except Exception:
         draw.ellipse((W - 215, 50, W - 55, 210), fill=(235, 69, 158))
 
-    # Draw heart / circle in center
     cx, cy = W // 2, H // 2 - 15
     heart_color = (235, 69, 158) if percentage >= 50 else (114, 137, 218)
     draw.ellipse((cx - 56, cy - 56, cx + 56, cy + 56), fill=heart_color, outline=(255, 255, 255), width=4)
@@ -389,7 +377,6 @@ def render_ship_card(avatar1_bytes: bytes, avatar2_bytes: bytes, percentage: int
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     draw.text((cx - tw // 2, cy - th // 2 - 4), pct_str, font=font_pct, fill=(255, 255, 255))
 
-    # Progress bar at bottom
     bar_w, bar_h = 240, 22
     bx, by = cx - bar_w // 2, H - 48
     draw.rounded_rectangle((bx, by, bx + bar_w, by + bar_h), radius=11, fill=(55, 52, 75))
@@ -446,11 +433,10 @@ def render_wanted_poster(avatar_bytes: bytes, display_name: str) -> io.BytesIO:
 
 
 def render_petpet_gif(avatar_bytes: bytes) -> io.BytesIO:
-    """Generate a smooth 10-frame animated PetPet GIF with squash-and-stretch physics."""
+    """Fallback animated PetPet GIF generator."""
     av = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
     SIZE = 128
     frames = []
-    # Squash/stretch deformation curve across 10 frames
     deform = [
         (0, 0, 0, 0),
         (-4, 6, 4, -6),
@@ -462,7 +448,7 @@ def render_petpet_gif(avatar_bytes: bytes) -> io.BytesIO:
         (0, 0, 0, 0),
     ]
 
-    for i, (dx, dy, dw, dh) in enumerate(deform):
+    for dx, dy, dw, dh in deform:
         frame = Image.new("RGBA", (SIZE, SIZE), (255, 255, 255, 0))
         base_w = 96 + dw
         base_h = 96 + dh
@@ -471,19 +457,21 @@ def render_petpet_gif(avatar_bytes: bytes) -> io.BytesIO:
         paste_y = SIZE - base_h - 6
         frame.paste(squished, (paste_x, paste_y), squished)
 
-        # Draw patting hand at top
         draw = ImageDraw.Draw(frame)
         hand_y = 6 + max(0, dy)
         hand_x = 34 + (dx // 2)
         palm_box = (hand_x, hand_y, hand_x + 62, hand_y + 30)
         draw.ellipse(palm_box, fill=(255, 220, 177, 255), outline=(90, 55, 30, 255), width=3)
-        # Fingers
         for fx in range(3):
             f_left = hand_x - 6 + (fx * 18)
             f_top = hand_y + 12
-            draw.ellipse((f_left, f_top, f_left + 20, f_top + 16), fill=(255, 220, 177, 255), outline=(90, 55, 30, 255), width=2)
+            draw.ellipse(
+                (f_left, f_top, f_left + 20, f_top + 16),
+                fill=(255, 220, 177, 255),
+                outline=(90, 55, 30, 255),
+                width=2,
+            )
 
-        # Convert RGBA frame to RGB on dark background for clean GIF palette
         bg = Image.new("RGB", (SIZE, SIZE), (43, 45, 49))
         bg.paste(frame, (0, 0), frame)
         frames.append(bg)
@@ -501,6 +489,79 @@ def render_petpet_gif(avatar_bytes: bytes) -> io.BytesIO:
     return out
 
 
+def render_amongus_gif(avatar_bytes: bytes, username: str, impostor: bool) -> io.BytesIO:
+    """Fallback animated Among Us ejection GIF if the API endpoint is unavailable."""
+    W, H = 600, 340
+    av = _circle_crop(Image.open(io.BytesIO(avatar_bytes)), 84)
+    rng = random.Random(42)
+    stars = [(rng.randint(0, W), rng.randint(0, H), rng.choice([1, 2, 3])) for _ in range(70)]
+    label = f"{username} was An Impostor." if impostor else f"{username} was not An Impostor."
+    font = _load_font(28, bold=True)
+
+    frames = []
+    total_frames = 16
+    for idx in range(total_frames):
+        bg = Image.new("RGBA", (W, H), (8, 10, 18, 255))
+        draw = ImageDraw.Draw(bg)
+        for sx, sy, sr in stars:
+            cur_x = (sx - idx * 8) % W
+            draw.ellipse((cur_x, sy, cur_x + sr, sy + sr), fill=(240, 240, 255, 220))
+
+        # Rotating avatar drifting across space
+        rotated = av.rotate(idx * 24, resample=Image.BICUBIC, expand=False)
+        ax = int(-60 + (W + 120) * (idx / (total_frames - 1)))
+        ay = H // 2 - 65
+        bg.paste(rotated, (ax, ay), rotated)
+
+        # Reveal text progressively
+        chars_to_show = int(len(label) * min(1.0, idx / (total_frames * 0.65)))
+        shown_text = label[:chars_to_show]
+        if shown_text:
+            bbox = draw.textbbox((0, 0), shown_text, font=font)
+            tw = bbox[2] - bbox[0]
+            draw.text(((W - tw) // 2, H // 2 + 45), shown_text, font=font, fill=(255, 255, 255))
+
+        frames.append(bg.convert("RGB"))
+
+    out = io.BytesIO()
+    frames[0].save(
+        out,
+        format="GIF",
+        save_all=True,
+        append_images=frames[1:],
+        duration=80,
+        loop=0,
+    )
+    out.seek(0)
+    return out
+
+
+def render_wasted_overlay(avatar_bytes: bytes) -> io.BytesIO:
+    """Fallback GTA Wasted overlay renderer."""
+    SIZE = 512
+    base = Image.open(io.BytesIO(avatar_bytes)).convert("RGB").resize((SIZE, SIZE), Image.LANCZOS)
+    gray = ImageEnhance.Color(base).enhance(0.15)
+    darkened = ImageEnhance.Brightness(gray).enhance(0.7)
+    canvas = darkened.convert("RGBA")
+
+    banner = Image.new("RGBA", (SIZE, 110), (0, 0, 0, 175))
+    canvas.paste(banner, (0, (SIZE - 110) // 2), banner)
+
+    draw = ImageDraw.Draw(canvas)
+    font = _load_font(74, bold=True)
+    text = "WASTED"
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    tx, ty = (SIZE - tw) // 2, (SIZE - th) // 2 - 10
+    draw.text((tx + 3, ty + 3), text, font=font, fill=(0, 0, 0, 255))
+    draw.text((tx, ty), text, font=font, fill=(220, 38, 38, 255))
+
+    out = io.BytesIO()
+    canvas.convert("RGB").save(out, format="PNG")
+    out.seek(0)
+    return out
+
+
 class FunCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -513,10 +574,20 @@ class FunCog(commands.Cog):
     async def cog_unload(self):
         self.bot.tree.remove_command(self.tweet_ctx_menu.name, type=self.tweet_ctx_menu.type)
 
+    def _get_png_avatar_url(self, user: discord.User | discord.Member) -> str:
+        """Return a clean PNG avatar URL without query parameters for Some Random API."""
+        return user.display_avatar.with_format("png").url.split("?")[0]
+
+    async def _fetch_avatar_bytes(self, user: discord.User | discord.Member) -> bytes:
+        try:
+            return await user.display_avatar.with_format("png").read()
+        except Exception:
+            return await self._fetch_bytes(self._get_png_avatar_url(user)) or b""
+
     async def _fetch_bytes(self, url: str) -> bytes | None:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+            async with aiohttp.ClientSession(headers=HTTP_HEADERS) as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status == 200:
                         return await resp.read()
         except Exception:
@@ -524,9 +595,10 @@ class FunCog(commands.Cog):
         return None
 
     async def _fetch_json(self, url: str, headers: dict | None = None) -> dict | list | None:
+        req_headers = {**HTTP_HEADERS, **(headers or {})}
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+            async with aiohttp.ClientSession(headers=req_headers) as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status == 200:
                         return await resp.json(content_type=None)
         except Exception:
@@ -548,7 +620,7 @@ class FunCog(commands.Cog):
         try:
             r2_url = await upload_image_to_r2(raw_bytes, filename, content_type)
             try:
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(headers=HTTP_HEADERS) as session:
                     async with session.get(r2_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                         await resp.read()
             except Exception:
@@ -571,7 +643,7 @@ class FunCog(commands.Cog):
             await send_func(embed=embed, file=file)
 
     # ------------------------------------------------------------------
-    # Tweet helper (handles mentions, external Discord emojis, Unicode emojis, attachments)
+    # 1. /tweet, !tweet, and "Make it a Tweet" (Some Random API /canvas/misc/tweet)
     # ------------------------------------------------------------------
 
     async def _build_tweet_from_data(
@@ -581,8 +653,8 @@ class FunCog(commands.Cog):
         guild: discord.Guild | None,
         attachment_url: str | None,
         timestamp_dt: datetime.datetime,
+        theme: str = "dark",
     ) -> io.BytesIO:
-        # 1. Resolve <@id>, <#id>, <@&id> mentions to human-readable text
         def replace_user_mention(match: re.Match) -> str:
             uid = int(match.group(1))
             if guild:
@@ -590,7 +662,7 @@ class FunCog(commands.Cog):
                 if m:
                     return f"@{m.display_name}"
             u = self.bot.get_user(uid)
-            return f"@{u.display_name}" if u else f"@user"
+            return f"@{u.display_name}" if u else "@user"
 
         def replace_channel_mention(match: re.Match) -> str:
             cid = int(match.group(1))
@@ -612,7 +684,25 @@ class FunCog(commands.Cog):
         cleaned_text = CHANNEL_MENTION_RE.sub(replace_channel_mention, cleaned_text)
         cleaned_text = ROLE_MENTION_RE.sub(replace_role_mention, cleaned_text)
 
-        # 2. Collect all custom Discord emojis & Unicode emojis to download in parallel
+        # Convert custom emoji tags <:name:id> into :name: for the Some Random API tweet endpoint
+        api_comment = CUSTOM_EMOJI_RE.sub(r":\2:", cleaned_text).strip()
+        if not api_comment:
+            api_comment = " "
+
+        av_url = self._get_png_avatar_url(author)
+        params = {
+            "displayname": author.display_name[:32],
+            "username": author.name[:32],
+            "comment": api_comment[:1000],
+            "theme": theme,
+            "avatar": av_url,
+        }
+        tweet_api_url = f"https://api.some-random-api.com/canvas/misc/tweet?{urllib.parse.urlencode(params)}"
+        api_bytes = await self._fetch_bytes(tweet_api_url)
+        if api_bytes:
+            return io.BytesIO(api_bytes)
+
+        # Fallback to local Pillow renderer if the external API is unreachable
         custom_ids = set(m.group(3) for m in CUSTOM_EMOJI_RE.finditer(cleaned_text))
         unicode_cps = set()
         for m in UNICODE_EMOJI_RE.finditer(cleaned_text):
@@ -634,9 +724,8 @@ class FunCog(commands.Cog):
             if data:
                 emoji_map[f"u:{cp}"] = data
 
-        avatar_url = author.display_avatar.with_format("png").with_size(128).url
         tasks = [
-            self._fetch_bytes(avatar_url),
+            self._fetch_avatar_bytes(author),
             self._fetch_bytes(attachment_url) if attachment_url else asyncio.sleep(0, result=None),
         ]
         for eid in custom_ids:
@@ -683,10 +772,6 @@ class FunCog(commands.Cog):
                     break
         return text, att_url
 
-    # ------------------------------------------------------------------
-    # 1. !tweet / /tweet / "Make it a Tweet" Context Menu
-    # ------------------------------------------------------------------
-
     @commands.command(name="tweet")
     async def tweet_prefix(self, ctx: commands.Context, *, text: str | None = None):
         """Reply to any message with !tweet (or pass text) to turn it into a Tweet."""
@@ -711,24 +796,30 @@ class FunCog(commands.Cog):
             file = discord.File(fp=out, filename="tweet.png")
             await ctx.send(file=file)
 
-    @app_commands.command(name="tweet", description="Turn text or a user's quote (including custom emojis) into a Tweet")
+    @app_commands.command(name="tweet", description="Turn text or a user's quote into a Tweet")
     @app_commands.describe(
-        text="The tweet text (can include custom/external emojis and @mentions)",
+        text="The tweet text",
         user="The user tweeting (defaults to you)",
-        image="Optional image to attach inside the tweet",
+        theme="Tweet theme (dark or light)",
+    )
+    @app_commands.choices(
+        theme=[
+            app_commands.Choice(name="Dark", value="dark"),
+            app_commands.Choice(name="Light", value="light"),
+        ]
     )
     async def tweet_slash(
         self,
         interaction: discord.Interaction,
         text: str,
         user: discord.User | None = None,
-        image: discord.Attachment | None = None,
+        theme: app_commands.Choice[str] | None = None,
     ):
         await interaction.response.defer()
         target = user or interaction.user
-        att_url = image.url if image else None
+        chosen_theme = theme.value if theme else "dark"
         out = await self._build_tweet_from_data(
-            target, text, interaction.guild, att_url, discord.utils.utcnow()
+            target, text, interaction.guild, None, discord.utils.utcnow(), theme=chosen_theme
         )
         file = discord.File(fp=out, filename="tweet.png")
         await interaction.followup.send(file=file)
@@ -743,7 +834,7 @@ class FunCog(commands.Cog):
         await interaction.followup.send(file=file)
 
     # ------------------------------------------------------------------
-    # 2. /rizz & !rizz
+    # 2. /rizz (Slash only)
     # ------------------------------------------------------------------
 
     async def _get_rizz_line(self) -> str:
@@ -764,22 +855,14 @@ class FunCog(commands.Cog):
             description=f"{user.mention}, {line}",
             color=discord.Color.from_rgb(255, 105, 180),
         )
-        embed.set_author(name=f"{interaction.user.display_name} → {user.display_name}", icon_url=interaction.user.display_avatar.url)
+        embed.set_author(
+            name=f"{interaction.user.display_name} → {user.display_name}",
+            icon_url=interaction.user.display_avatar.url,
+        )
         await interaction.followup.send(content=user.mention, embed=embed)
 
-    @commands.command(name="rizz")
-    async def rizz_prefix(self, ctx: commands.Context, user: discord.User | None = None):
-        target = user or ctx.author
-        line = await self._get_rizz_line()
-        embed = discord.Embed(
-            description=f"{target.mention}, {line}",
-            color=discord.Color.from_rgb(255, 105, 180),
-        )
-        embed.set_author(name=f"{ctx.author.display_name} → {target.display_name}", icon_url=ctx.author.display_avatar.url)
-        await ctx.send(content=target.mention, embed=embed)
-
     # ------------------------------------------------------------------
-    # 3. /roast & !roast
+    # 3. /roast (Slash only)
     # ------------------------------------------------------------------
 
     async def _get_roast_line(self) -> str:
@@ -800,19 +883,8 @@ class FunCog(commands.Cog):
         embed.set_footer(text=f"Roasted by {interaction.user.display_name}")
         await interaction.followup.send(content=user.mention, embed=embed)
 
-    @commands.command(name="roast")
-    async def roast_prefix(self, ctx: commands.Context, user: discord.User | None = None):
-        target = user or ctx.author
-        roast = await self._get_roast_line()
-        embed = discord.Embed(
-            description=f"🔥 {target.mention}, {roast}",
-            color=discord.Color.orange(),
-        )
-        embed.set_footer(text=f"Roasted by {ctx.author.display_name}")
-        await ctx.send(content=target.mention, embed=embed)
-
     # ------------------------------------------------------------------
-    # 4. /ship & !ship (Persisted in SQLite Database)
+    # 4. /ship (Slash only, Persisted in SQLite Database)
     # ------------------------------------------------------------------
 
     def _ship_commentary(self, pct: int) -> str:
@@ -833,13 +905,11 @@ class FunCog(commands.Cog):
         n1, n2 = user1.display_name, user2.display_name
         ship_name = n1[: max(1, len(n1) // 2)] + n2[len(n2) // 2 :]
 
-        av1_url = user1.display_avatar.with_format("png").with_size(256).url
-        av2_url = user2.display_avatar.with_format("png").with_size(256).url
         av1_bytes, av2_bytes = await asyncio.gather(
-            self._fetch_bytes(av1_url), self._fetch_bytes(av2_url)
+            self._fetch_avatar_bytes(user1), self._fetch_avatar_bytes(user2)
         )
         card_bytes = await asyncio.to_thread(
-            render_ship_card, av1_bytes or b"", av2_bytes or b"", pct
+            render_ship_card, av1_bytes, av2_bytes, pct
         )
         file = discord.File(fp=card_bytes, filename="ship.png")
 
@@ -870,29 +940,17 @@ class FunCog(commands.Cog):
         embed, file = await self._build_ship_response(user1, u2)
         await interaction.followup.send(embed=embed, file=file)
 
-    @commands.command(name="ship")
-    async def ship_prefix(
-        self,
-        ctx: commands.Context,
-        user1: discord.User,
-        user2: discord.User | None = None,
-    ):
-        async with ctx.typing():
-            u2 = user2 or ctx.author
-            embed, file = await self._build_ship_response(user1, u2)
-            await ctx.send(embed=embed, file=file)
-
     # ------------------------------------------------------------------
-    # 5. /wanted & !wanted
+    # 5. /wanted (Slash only)
     # ------------------------------------------------------------------
 
     async def _build_wanted_bytes(self, target: discord.User) -> io.BytesIO:
-        av_url = target.display_avatar.with_format("png").with_size(512).url
+        av_url = self._get_png_avatar_url(target)
         popcat_url = f"https://api.popcat.xyz/wanted?image={urllib.parse.quote(av_url, safe='')}"
         img_bytes = await self._fetch_bytes(popcat_url)
         if img_bytes:
             return io.BytesIO(img_bytes)
-        av_bytes = await self._fetch_bytes(av_url) or b""
+        av_bytes = await self._fetch_avatar_bytes(target)
         return await asyncio.to_thread(render_wanted_poster, av_bytes, target.display_name)
 
     @app_commands.command(name="wanted", description="Generate a Wanted poster for a user")
@@ -906,18 +964,8 @@ class FunCog(commands.Cog):
         embed.set_image(url="attachment://wanted.png")
         await interaction.followup.send(embed=embed, file=file)
 
-    @commands.command(name="wanted")
-    async def wanted_prefix(self, ctx: commands.Context, user: discord.User | None = None):
-        async with ctx.typing():
-            target = user or ctx.author
-            out = await self._build_wanted_bytes(target)
-            file = discord.File(fp=out, filename="wanted.png")
-            embed = discord.Embed(title=f"🤠 Wanted: {target.display_name}", color=discord.Color.gold())
-            embed.set_image(url="attachment://wanted.png")
-            await ctx.send(embed=embed, file=file)
-
     # ------------------------------------------------------------------
-    # 6. /corporate & !corporate (Corporate BS Generator)
+    # 6. /corporate (Slash only - Corporate BS Generator)
     # ------------------------------------------------------------------
 
     async def _get_corporate_bs(self) -> str:
@@ -937,18 +985,8 @@ class FunCog(commands.Cog):
         )
         await interaction.followup.send(embed=embed)
 
-    @commands.command(name="corporate")
-    async def corporate_prefix(self, ctx: commands.Context):
-        phrase = await self._get_corporate_bs()
-        embed = discord.Embed(
-            title="💼 Corporate BS Generator",
-            description=f"*\"{phrase}\"*",
-            color=discord.Color.teal(),
-        )
-        await ctx.send(embed=embed)
-
     # ------------------------------------------------------------------
-    # 7. /cat, /duck, /capybara (& prefix versions)
+    # 7. /cat, /duck, /capybara (Slash only)
     # ------------------------------------------------------------------
 
     async def _get_cat_url(self) -> str:
@@ -977,13 +1015,6 @@ class FunCog(commands.Cog):
         embed.set_image(url=url)
         await interaction.followup.send(embed=embed)
 
-    @commands.command(name="cat")
-    async def cat_prefix(self, ctx: commands.Context):
-        url = await self._get_cat_url()
-        embed = discord.Embed(title="🐱 Meow!", color=discord.Color.blurple())
-        embed.set_image(url=url)
-        await ctx.send(embed=embed)
-
     @app_commands.command(name="duck", description="Get a random duck picture")
     async def duck_slash(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -991,13 +1022,6 @@ class FunCog(commands.Cog):
         embed = discord.Embed(title="🦆 Quack!", color=discord.Color.gold())
         embed.set_image(url=url)
         await interaction.followup.send(embed=embed)
-
-    @commands.command(name="duck")
-    async def duck_prefix(self, ctx: commands.Context):
-        url = await self._get_duck_url()
-        embed = discord.Embed(title="🦆 Quack!", color=discord.Color.gold())
-        embed.set_image(url=url)
-        await ctx.send(embed=embed)
 
     @app_commands.command(name="capybara", description="Get a random capybara picture")
     async def capybara_slash(self, interaction: discord.Interaction):
@@ -1007,15 +1031,8 @@ class FunCog(commands.Cog):
         embed.set_image(url=url)
         await interaction.followup.send(embed=embed)
 
-    @commands.command(name="capybara")
-    async def capybara_prefix(self, ctx: commands.Context):
-        url = await self._get_capybara_url()
-        embed = discord.Embed(title="🦦 Ok I Pull Up", color=discord.Color.green())
-        embed.set_image(url=url)
-        await ctx.send(embed=embed)
-
     # ------------------------------------------------------------------
-    # 8. /steal & !steal (Steal custom emojis to the server)
+    # 8. /steal & !steal (Keep BOTH slash and prefix commands)
     # ------------------------------------------------------------------
 
     async def _steal_emoji_to_guild(
@@ -1079,18 +1096,21 @@ class FunCog(commands.Cog):
             await ctx.send(f"⚠️ `{e}`")
 
     # ------------------------------------------------------------------
-    # 9. /petpet & !petpet (Animated PetPet GIF)
+    # 9. /petpet (Slash only - Some Random API /premium/petpet)
     # ------------------------------------------------------------------
 
     async def _build_petpet_gif(self, target: discord.User) -> io.BytesIO:
-        av_url = target.display_avatar.with_format("png").with_size(256).url
-        # Try Some-Random-Api first, fall back to built-in Pillow PetPet generator
-        api_url = f"https://some-random-api.com/premium/petpet?avatar={urllib.parse.quote(av_url, safe='')}"
-        api_bytes = await self._fetch_bytes(api_url)
-        if api_bytes and api_bytes[:3] == b"GIF":
-            return io.BytesIO(api_bytes)
+        av_url = self._get_png_avatar_url(target)
+        encoded_av = urllib.parse.quote(av_url, safe="")
+        for endpoint in (
+            f"https://api.some-random-api.com/premium/petpet?avatar={encoded_av}",
+            f"https://api.some-random-api.com/petpet?avatar={encoded_av}",
+        ):
+            api_bytes = await self._fetch_bytes(endpoint)
+            if api_bytes and api_bytes[:3] == b"GIF":
+                return io.BytesIO(api_bytes)
 
-        av_bytes = await self._fetch_bytes(av_url)
+        av_bytes = await self._fetch_avatar_bytes(target)
         if not av_bytes:
             raise ValueError("Could not download the user's avatar.")
         return await asyncio.to_thread(render_petpet_gif, av_bytes)
@@ -1102,27 +1122,164 @@ class FunCog(commands.Cog):
         target = user or interaction.user
         try:
             gif_io = await self._build_petpet_gif(target)
-
-            async def followup_send(**kwargs):
-                return await interaction.followup.send(**kwargs, wait=True)
-
-            await self._send_image_output(
-                gif_io, "petpet.gif", f"👋 Petting {target.display_name}", followup_send
-            )
+            file = discord.File(fp=gif_io, filename="petpet.gif")
+            embed = discord.Embed(title=f"👋 Petting {target.display_name}", color=discord.Color.blurple())
+            embed.set_image(url="attachment://petpet.gif")
+            await interaction.followup.send(embed=embed, file=file)
         except Exception as e:
             await interaction.followup.send(f"⚠️ `{e}`")
 
-    @commands.command(name="petpet")
-    async def petpet_prefix(self, ctx: commands.Context, user: discord.User | None = None):
-        async with ctx.typing():
-            target = user or ctx.author
-            try:
-                gif_io = await self._build_petpet_gif(target)
-                await self._send_image_output(
-                    gif_io, "petpet.gif", f"👋 Petting {target.display_name}", ctx.send
-                )
-            except Exception as e:
-                await ctx.send(f"⚠️ `{e}`")
+    # ------------------------------------------------------------------
+    # 10. /amongus (Some Random API /premium/amongus)
+    # ------------------------------------------------------------------
+
+    @app_commands.command(name="amongus", description="Eject a user into space (Among Us GIF)")
+    @app_commands.describe(
+        user="The user to eject (defaults to you)",
+        impostor="Whether the user was an Impostor (random if omitted)",
+    )
+    async def amongus_slash(
+        self,
+        interaction: discord.Interaction,
+        user: discord.User | None = None,
+        impostor: bool | None = None,
+    ):
+        await interaction.response.defer()
+        target = user or interaction.user
+        is_imp = impostor if impostor is not None else random.choice([True, False])
+        av_url = self._get_png_avatar_url(target)
+        params = urllib.parse.urlencode(
+            {
+                "avatar": av_url,
+                "username": target.display_name[:28],
+                "impostor": "true" if is_imp else "false",
+            }
+        )
+
+        gif_bytes = None
+        for base in (
+            "https://api.some-random-api.com/premium/amongus",
+            "https://api.some-random-api.com/amongus",
+        ):
+            data = await self._fetch_bytes(f"{base}?{params}")
+            if data and data[:3] == b"GIF":
+                gif_bytes = data
+                break
+
+        if gif_bytes:
+            gif_io = io.BytesIO(gif_bytes)
+        else:
+            av_bytes = await self._fetch_avatar_bytes(target)
+            gif_io = await asyncio.to_thread(render_amongus_gif, av_bytes, target.display_name[:28], is_imp)
+
+        file = discord.File(fp=gif_io, filename="amongus.gif")
+        embed = discord.Embed(
+            title=f"🚀 {target.display_name} was ejected...",
+            color=discord.Color.red() if is_imp else discord.Color.blurple(),
+        )
+        embed.set_image(url="attachment://amongus.gif")
+        await interaction.followup.send(embed=embed, file=file)
+
+    # ------------------------------------------------------------------
+    # 11. /wasted (Some Random API /canvas/overlay/wasted)
+    # ------------------------------------------------------------------
+
+    @app_commands.command(name="wasted", description="Apply the GTA Wasted overlay to a user's avatar")
+    @app_commands.describe(user="The user who got wasted (defaults to you)")
+    async def wasted_slash(self, interaction: discord.Interaction, user: discord.User | None = None):
+        await interaction.response.defer()
+        target = user or interaction.user
+        av_url = self._get_png_avatar_url(target)
+        api_url = f"https://api.some-random-api.com/canvas/overlay/wasted?{urllib.parse.urlencode({'avatar': av_url})}"
+        img_bytes = await self._fetch_bytes(api_url)
+        if img_bytes:
+            out = io.BytesIO(img_bytes)
+        else:
+            av_bytes = await self._fetch_avatar_bytes(target)
+            out = await asyncio.to_thread(render_wasted_overlay, av_bytes)
+
+        file = discord.File(fp=out, filename="wasted.png")
+        embed = discord.Embed(title=f"💀 {target.display_name} got Wasted!", color=discord.Color.dark_red())
+        embed.set_image(url="attachment://wasted.png")
+        await interaction.followup.send(embed=embed, file=file)
+
+    # ------------------------------------------------------------------
+    # 12. /horny (Some Random API /canvas/misc/horny)
+    # ------------------------------------------------------------------
+
+    @app_commands.command(name="horny", description="Grant a Horny License card to a user")
+    @app_commands.describe(user="The user to grant a horny license to (defaults to you)")
+    async def horny_slash(self, interaction: discord.Interaction, user: discord.User | None = None):
+        await interaction.response.defer()
+        target = user or interaction.user
+        av_url = self._get_png_avatar_url(target)
+        api_url = f"https://api.some-random-api.com/canvas/misc/horny?{urllib.parse.urlencode({'avatar': av_url})}"
+        img_bytes = await self._fetch_bytes(api_url)
+        if not img_bytes:
+            await interaction.followup.send("⚠️ Failed to reach the image API. Please try again in a moment.")
+            return
+
+        file = discord.File(fp=io.BytesIO(img_bytes), filename="horny.png")
+        embed = discord.Embed(
+            title=f"🪪 {target.display_name}'s Horny License",
+            color=discord.Color.from_rgb(255, 105, 180),
+        )
+        embed.set_image(url="attachment://horny.png")
+        await interaction.followup.send(embed=embed, file=file)
+
+    # ------------------------------------------------------------------
+    # 13. /stupid (Some Random API /canvas/misc/its-so-stupid)
+    # ------------------------------------------------------------------
+
+    @app_commands.command(name="stupid", description="Generate an 'Oh no, it's retarded / so stupid' meme")
+    @app_commands.describe(
+        text="The text for what the dog is saying",
+        user="The user for the meme (defaults to you)",
+    )
+    async def stupid_slash(
+        self,
+        interaction: discord.Interaction,
+        text: str,
+        user: discord.User | None = None,
+    ):
+        await interaction.response.defer()
+        target = user or interaction.user
+        av_url = self._get_png_avatar_url(target)
+        params = urllib.parse.urlencode({"avatar": av_url, "dog": text[:100]})
+        api_url = f"https://api.some-random-api.com/canvas/misc/its-so-stupid?{params}"
+        img_bytes = await self._fetch_bytes(api_url)
+        if not img_bytes:
+            await interaction.followup.send("⚠️ Failed to reach the image API. Please try again in a moment.")
+            return
+
+        file = discord.File(fp=io.BytesIO(img_bytes), filename="stupid.png")
+        embed = discord.Embed(title="🐶 Oh no, it's so stupid...", color=discord.Color.orange())
+        embed.set_image(url="attachment://stupid.png")
+        await interaction.followup.send(embed=embed, file=file)
+
+    # ------------------------------------------------------------------
+    # 14. /simpcard (Some Random API /canvas/misc/simpcard)
+    # ------------------------------------------------------------------
+
+    @app_commands.command(name="simpcard", description="Generate an official Simp Card for a user")
+    @app_commands.describe(user="The user to generate a Simp Card for (defaults to you)")
+    async def simpcard_slash(self, interaction: discord.Interaction, user: discord.User | None = None):
+        await interaction.response.defer()
+        target = user or interaction.user
+        av_url = self._get_png_avatar_url(target)
+        api_url = f"https://api.some-random-api.com/canvas/misc/simpcard?{urllib.parse.urlencode({'avatar': av_url})}"
+        img_bytes = await self._fetch_bytes(api_url)
+        if not img_bytes:
+            await interaction.followup.send("⚠️ Failed to reach the image API. Please try again in a moment.")
+            return
+
+        file = discord.File(fp=io.BytesIO(img_bytes), filename="simpcard.png")
+        embed = discord.Embed(
+            title=f"🪪 {target.display_name}'s Official Simp Card",
+            color=discord.Color.from_rgb(235, 69, 158),
+        )
+        embed.set_image(url="attachment://simpcard.png")
+        await interaction.followup.send(embed=embed, file=file)
 
 
 async def setup(bot: commands.Bot):
