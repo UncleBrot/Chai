@@ -27,7 +27,8 @@ A multi-purpose Discord bot built with `discord.py`, featuring anonymous confess
 - Create a Discord Bot on the [Discord Developer Portal](https://discord.com/developers/applications).
 - Get your bot token.
 - Enable the **Message Content** privileged intent (required for prefix commands like `!caption`).
-- Invite your bot with the following permissions: **Send Messages**, **Send Messages in Threads**, **Create Public Threads**, **Embed Links**, **Read Message History**.
+- **Enable User Install ("Use Anywhere")**: In the Developer Portal → **Installation** tab → under **Installation Contexts**, check both **User Install** and **Guild Install**, and under **Default Install Settings** add the `applications.commands` scope for User Install.
+- Invite your bot with the following permissions: **Send Messages**, **Send Messages in Threads**, **Create Public Threads**, **Embed Links**, **Read Message History**, **Manage Expressions** (for `/steal`), and **Manage Webhooks** (for `!impersonate`).
 
 ### 2. Environment Variables
 
@@ -40,7 +41,9 @@ cp .env.example .env
 |---|---|---|
 | `Discord_Token` | ✅ | Your Discord bot token |
 | `OWNER_ID` | ⬜ | Bot owner's Discord User ID (defaults to `762609713610620948` — **change this to your own User ID if you host the bot!**) |
-| `img_log_id` | ⬜ | Channel ID to log every `!gif` / `/gif` usage |
+| `BOT_LOGS_ID` | ⬜ | Channel ID to log all incoming DMs sent to the bot |
+| `G_CONFESSION_LOG` | ⬜ | Global channel ID to log all confessions (and R2-backed confession images) across all servers |
+| `img_log_id` | ⬜ | Channel ID to log every image/GIF conversion along with Server Name & Server ID |
 | `R2_ENDPOINT_URL` | ⬜ | Cloudflare R2 endpoint URL |
 | `R2_ACCESS_KEY_ID` | ⬜ | R2 API access key ID |
 | `R2_SECRET_ACCESS_KEY` | ⬜ | R2 API secret access key |

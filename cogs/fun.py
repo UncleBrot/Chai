@@ -568,6 +568,10 @@ class FunCog(commands.Cog):
         self.tweet_ctx_menu = app_commands.ContextMenu(
             name="Make it a Tweet",
             callback=self.tweet_context_menu,
+            allowed_installs=app_commands.AppInstallationType(guild=True, user=True),
+            allowed_contexts=app_commands.AppCommandContext(
+                guild=True, dm_channel=True, private_channel=True
+            ),
         )
         self.bot.tree.add_command(self.tweet_ctx_menu)
 
@@ -808,6 +812,8 @@ class FunCog(commands.Cog):
             app_commands.Choice(name="Light", value="light"),
         ]
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def tweet_slash(
         self,
         interaction: discord.Interaction,
@@ -848,6 +854,8 @@ class FunCog(commands.Cog):
 
     @app_commands.command(name="rizz", description="Send a rizz / pickup line to a user")
     @app_commands.describe(user="The user you want to rizz up")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def rizz_slash(self, interaction: discord.Interaction, user: discord.User):
         await interaction.response.defer()
         line = await self._get_rizz_line()
@@ -873,6 +881,8 @@ class FunCog(commands.Cog):
 
     @app_commands.command(name="roast", description="Roast a user")
     @app_commands.describe(user="The user to roast")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def roast_slash(self, interaction: discord.Interaction, user: discord.User):
         await interaction.response.defer()
         roast = await self._get_roast_line()
@@ -929,6 +939,8 @@ class FunCog(commands.Cog):
 
     @app_commands.command(name="ship", description="Ship two users together (permanently saved in the database!)")
     @app_commands.describe(user1="First user", user2="Second user (defaults to you)")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def ship_slash(
         self,
         interaction: discord.Interaction,
@@ -955,6 +967,8 @@ class FunCog(commands.Cog):
 
     @app_commands.command(name="wanted", description="Generate a Wanted poster for a user")
     @app_commands.describe(user="The user to put on a Wanted poster (defaults to you)")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def wanted_slash(self, interaction: discord.Interaction, user: discord.User | None = None):
         await interaction.response.defer()
         target = user or interaction.user
@@ -975,6 +989,8 @@ class FunCog(commands.Cog):
         return random.choice(FALLBACK_CORPORATE)
 
     @app_commands.command(name="corporate", description="Generate a random corporate buzzword phrase")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def corporate_slash(self, interaction: discord.Interaction):
         await interaction.response.defer()
         phrase = await self._get_corporate_bs()
@@ -1008,6 +1024,8 @@ class FunCog(commands.Cog):
         return "https://api.capy.lol/v1/capybara"
 
     @app_commands.command(name="cat", description="Get a random cat picture")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def cat_slash(self, interaction: discord.Interaction):
         await interaction.response.defer()
         url = await self._get_cat_url()
@@ -1016,6 +1034,8 @@ class FunCog(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="duck", description="Get a random duck picture")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def duck_slash(self, interaction: discord.Interaction):
         await interaction.response.defer()
         url = await self._get_duck_url()
@@ -1024,6 +1044,8 @@ class FunCog(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="capybara", description="Get a random capybara picture")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def capybara_slash(self, interaction: discord.Interaction):
         await interaction.response.defer()
         url = await self._get_capybara_url()
@@ -1032,7 +1054,7 @@ class FunCog(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     # ------------------------------------------------------------------
-    # 8. /steal & !steal (Keep BOTH slash and prefix commands)
+    # 8. /steal & !steal (Keep BOTH slash and prefix commands - Guild Only)
     # ------------------------------------------------------------------
 
     async def _steal_emoji_to_guild(
@@ -1060,6 +1082,8 @@ class FunCog(commands.Cog):
     @app_commands.command(name="steal", description="Steal a custom emoji from another server and add it to this server")
     @app_commands.describe(emoji="The custom emoji to steal", name="Optional custom name for the emoji")
     @app_commands.default_permissions(manage_emojis_and_stickers=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
+    @app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     @app_commands.guild_only()
     async def steal_slash(
         self,
@@ -1117,6 +1141,8 @@ class FunCog(commands.Cog):
 
     @app_commands.command(name="petpet", description="Generate an animated PetPet GIF of a user")
     @app_commands.describe(user="The user to pet (defaults to you)")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def petpet_slash(self, interaction: discord.Interaction, user: discord.User | None = None):
         await interaction.response.defer()
         target = user or interaction.user
@@ -1138,6 +1164,8 @@ class FunCog(commands.Cog):
         user="The user to eject (defaults to you)",
         impostor="Whether the user was an Impostor (random if omitted)",
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def amongus_slash(
         self,
         interaction: discord.Interaction,
@@ -1186,6 +1214,8 @@ class FunCog(commands.Cog):
 
     @app_commands.command(name="wasted", description="Apply the GTA Wasted overlay to a user's avatar")
     @app_commands.describe(user="The user who got wasted (defaults to you)")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def wasted_slash(self, interaction: discord.Interaction, user: discord.User | None = None):
         await interaction.response.defer()
         target = user or interaction.user
@@ -1209,6 +1239,8 @@ class FunCog(commands.Cog):
 
     @app_commands.command(name="horny", description="Grant a Horny License card to a user")
     @app_commands.describe(user="The user to grant a horny license to (defaults to you)")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def horny_slash(self, interaction: discord.Interaction, user: discord.User | None = None):
         await interaction.response.defer()
         target = user or interaction.user
@@ -1236,6 +1268,8 @@ class FunCog(commands.Cog):
         text="The text for what the dog is saying",
         user="The user for the meme (defaults to you)",
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def stupid_slash(
         self,
         interaction: discord.Interaction,
@@ -1263,6 +1297,8 @@ class FunCog(commands.Cog):
 
     @app_commands.command(name="simpcard", description="Generate an official Simp Card for a user")
     @app_commands.describe(user="The user to generate a Simp Card for (defaults to you)")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def simpcard_slash(self, interaction: discord.Interaction, user: discord.User | None = None):
         await interaction.response.defer()
         target = user or interaction.user

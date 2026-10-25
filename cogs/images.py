@@ -148,16 +148,34 @@ class ImagesCog(commands.Cog):
         if raw and raw.isdigit():
             self._img_log_channel_id = int(raw)
 
+        self.gif_ctx_menu = app_commands.ContextMenu(
+            name="Convert to GIF",
+            callback=self.gif_context_menu,
+            allowed_installs=app_commands.AppInstallationType(guild=True, user=True),
+            allowed_contexts=app_commands.AppCommandContext(
+                guild=True, dm_channel=True, private_channel=True
+            ),
+        )
+        self.bot.tree.add_command(self.gif_ctx_menu)
+
+    async def cog_unload(self):
+        self.bot.tree.remove_command(self.gif_ctx_menu.name, type=self.gif_ctx_menu.type)
+
+    def _extract_image_from_message(self, msg: discord.Message) -> str:
+        if msg.attachments:
+            return msg.attachments[0].url
+        for embed in msg.embeds:
+            if embed.image and embed.image.url:
+                return embed.image.url
+            if embed.thumbnail and embed.thumbnail.url:
+                return embed.thumbnail.url
+        raise ValueError("Could not find an image in that message.")
+
     async def get_replied_image_url(self, ctx: commands.Context) -> str:
         if not ctx.message.reference:
             raise ValueError("You must reply to a message containing an image.")
         replied_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
-        if replied_msg.attachments:
-            return replied_msg.attachments[0].url
-        for embed in replied_msg.embeds:
-            if embed.image and embed.image.url: return embed.image.url
-            if embed.thumbnail and embed.thumbnail.url: return embed.thumbnail.url
-        raise ValueError("Could not find an image in the replied message.")
+        return self._extract_image_from_message(replied_msg)
 
     async def handle_image_upload(self, out_bytes: io.BytesIO, filename: str, is_animated: bool, title: str, author_name: str, send_func) -> str | None:
         try:
@@ -204,6 +222,8 @@ class ImagesCog(commands.Cog):
         user: discord.User | discord.Member,
         image_url: str | None,
         source: str,
+        guild: discord.Guild | None = None,
+        guild_id: int | None = None,
     ):
         if not self._img_log_channel_id:
             return
@@ -213,14 +233,29 @@ class ImagesCog(commands.Cog):
                 channel = await self.bot.fetch_channel(self._img_log_channel_id)
             except Exception:
                 return
+
+        resolved_guild = guild or (self.bot.get_guild(guild_id) if guild_id else None)
+        if resolved_guild:
+            server_name = resolved_guild.name
+            server_id = str(resolved_guild.id)
+        elif guild_id:
+            server_name = "External Server (User App)"
+            server_id = str(guild_id)
+        else:
+            server_name = "Direct Messages"
+            server_id = "DM"
+
         embed = discord.Embed(
-            title="GIF Command Used",
+            title="🖼️ Image Command Used",
             color=discord.Color.green(),
             timestamp=discord.utils.utcnow(),
         )
         embed.set_author(name=f"{user} ({user.id})", icon_url=user.display_avatar.url)
-        embed.add_field(name="User ID", value=str(user.id))
-        embed.add_field(name="Source", value=source)
+        embed.add_field(name="User", value=f"{user} ({user.mention})", inline=True)
+        embed.add_field(name="User ID", value=f"`{user.id}`", inline=True)
+        embed.add_field(name="Source", value=source, inline=True)
+        embed.add_field(name="Server Name", value=server_name, inline=True)
+        embed.add_field(name="Server ID", value=f"`{server_id}`", inline=True)
         if image_url:
             embed.set_image(url=image_url)
         try:
@@ -239,12 +274,15 @@ class ImagesCog(commands.Cog):
                 # Offload heavy image processing to a thread
                 out_bytes, filename, is_animated = await asyncio.to_thread(process_caption_image, img_bytes, text)
                 
-                await self.handle_image_upload(out_bytes, filename, is_animated, "Captioned Image", ctx.author.display_name, ctx.send)
+                r2_url = await self.handle_image_upload(out_bytes, filename, is_animated, "Captioned Image", ctx.author.display_name, ctx.send)
+                await self._log_gif(ctx.author, r2_url, "!caption (prefix)", guild=ctx.guild, guild_id=ctx.guild.id if ctx.guild else None)
         except Exception as e:
             await ctx.send(f"⚠️ Error: `{e}`")
 
     @app_commands.command(name="caption", description="Caption an uploaded image")
     @app_commands.describe(image="The image to caption", text="The text for the caption")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def caption_slash(self, interaction: discord.Interaction, image: discord.Attachment, text: str):
         try:
             await interaction.response.defer()
@@ -254,7 +292,8 @@ class ImagesCog(commands.Cog):
             async def followup_send(**kwargs):
                 return await interaction.followup.send(**kwargs, wait=True)
 
-            await self.handle_image_upload(out_bytes, filename, is_animated, "Captioned Image", interaction.user.display_name, followup_send)
+            r2_url = await self.handle_image_upload(out_bytes, filename, is_animated, "Captioned Image", interaction.user.display_name, followup_send)
+            await self._log_gif(interaction.user, r2_url, "/caption (slash)", guild=interaction.guild, guild_id=interaction.guild_id)
         except Exception as e:
             await interaction.followup.send(f"⚠️ Error: `{e}`")
 
@@ -269,12 +308,14 @@ class ImagesCog(commands.Cog):
                 out_bytes, filename, is_animated = await asyncio.to_thread(process_gif_image, img_bytes)
                 
                 r2_url = await self.handle_image_upload(out_bytes, filename, is_animated, "GIF Conversion", ctx.author.display_name, ctx.send)
-                await self._log_gif(ctx.author, r2_url, "!gif (prefix)")
+                await self._log_gif(ctx.author, r2_url, "!gif (prefix)", guild=ctx.guild, guild_id=ctx.guild.id if ctx.guild else None)
         except Exception as e:
             await ctx.send(f"⚠️ Error: `{e}`")
 
     @app_commands.command(name="gif", description="Convert an uploaded image to a GIF")
     @app_commands.describe(image="The image to convert")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def gif_slash(self, interaction: discord.Interaction, image: discord.Attachment):
         try:
             await interaction.response.defer()
@@ -285,10 +326,28 @@ class ImagesCog(commands.Cog):
                 return await interaction.followup.send(**kwargs, wait=True)
 
             r2_url = await self.handle_image_upload(out_bytes, filename, is_animated, "GIF Conversion", interaction.user.display_name, followup_send)
-            await self._log_gif(interaction.user, r2_url, "/gif (slash)")
+            await self._log_gif(interaction.user, r2_url, "/gif (slash)", guild=interaction.guild, guild_id=interaction.guild_id)
+        except Exception as e:
+            await interaction.followup.send(f"⚠️ Error: `{e}`")
+
+    async def gif_context_menu(self, interaction: discord.Interaction, message: discord.Message):
+        try:
+            await interaction.response.defer()
+            image_url = self._extract_image_from_message(message)
+            img_bytes = await download_image(image_url)
+            out_bytes, filename, is_animated = await asyncio.to_thread(process_gif_image, img_bytes)
+
+            async def followup_send(**kwargs):
+                return await interaction.followup.send(**kwargs, wait=True)
+
+            r2_url = await self.handle_image_upload(
+                out_bytes, filename, is_animated, "GIF Conversion", interaction.user.display_name, followup_send
+            )
+            await self._log_gif(interaction.user, r2_url, "Convert to GIF (Context Menu)", guild=interaction.guild, guild_id=interaction.guild_id)
         except Exception as e:
             await interaction.followup.send(f"⚠️ Error: `{e}`")
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ImagesCog(bot))
+
 

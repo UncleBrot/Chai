@@ -1,11 +1,13 @@
 import os
 
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
 import database as db
+from utils.r2 import upload_image_to_r2
 
 load_dotenv()
 TOKEN = os.getenv("Discord_Token")
@@ -19,6 +21,10 @@ bot = commands.Bot(
     intents=intents,
     owner_id=OWNER_ID,
     help_command=None,
+    allowed_installs=app_commands.AppInstallationType(guild=True, user=True),
+    allowed_contexts=app_commands.AppCommandContext(
+        guild=True, dm_channel=True, private_channel=True
+    ),
 )
 
 
@@ -203,14 +209,89 @@ class ReplyModal(discord.ui.Modal, title="Reply to Confession"):
 # Core logic
 # ---------------------------------------------------------------------------
 
+async def _resolve_confession_image_url(image: discord.Attachment | None) -> str | None:
+    """Upload a confession attachment to Cloudflare R2 so it is permanently saved,
+    and return the R2 URL (falling back to the Discord attachment URL if R2 is not configured)."""
+    if image is None:
+        return None
+    try:
+        img_bytes = await image.read()
+        filename = image.filename or "confession.png"
+        content_type = image.content_type or (
+            "image/gif" if filename.lower().endswith(".gif") else "image/png"
+        )
+        r2_url = await upload_image_to_r2(img_bytes, filename, content_type)
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(r2_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    await resp.read()
+        except Exception:
+            pass
+        return r2_url
+    except Exception as e:
+        print(f"Confession R2 upload failed ({e}), falling back to attachment URL.")
+        return image.url
+
+
+async def _send_global_confession_log(
+    user: discord.User | discord.Member,
+    guild: discord.Guild,
+    number: int,
+    text: str,
+    image_url: str | None,
+    jump_url: str,
+    is_reply: bool = False,
+):
+    """Send every confession (and reply) from any server to the global G_CONFESSION_LOG channel."""
+    raw_id = os.getenv("G_CONFESSION_LOG", "").strip()
+    if not raw_id or not raw_id.isdigit():
+        return
+
+    cid = int(raw_id)
+    g_channel = bot.get_channel(cid)
+    if g_channel is None:
+        try:
+            g_channel = await bot.fetch_channel(cid)
+        except Exception:
+            return
+
+    title = f"💌 Global Confession Reply (#{number})" if is_reply else f"💌 Global Confession (#{number})"
+    g_embed = discord.Embed(
+        title=title,
+        color=discord.Color.orange() if is_reply else discord.Color.dark_purple(),
+        timestamp=discord.utils.utcnow(),
+    )
+    g_embed.set_author(
+        name=f"{user} ({user.id})",
+        icon_url=user.display_avatar.url,
+    )
+    g_embed.add_field(name="Confession User", value=f"{user} ({user.mention})", inline=True)
+    g_embed.add_field(name="Confession User ID", value=f"`{user.id}`", inline=True)
+    g_embed.add_field(name="Confession Server Name", value=guild.name, inline=True)
+    g_embed.add_field(name="Confession Server ID", value=f"`{guild.id}`", inline=True)
+    g_embed.add_field(name="Jump to Confession", value=jump_url, inline=True)
+    g_embed.add_field(name="Confession", value=text[:1024] or "*(Empty)*", inline=False)
+
+    if image_url:
+        g_embed.add_field(name="Confession Image (R2)", value=image_url, inline=False)
+        g_embed.set_image(url=image_url)
+
+    try:
+        await g_channel.send(embed=g_embed)
+    except Exception:
+        pass
+
+
 async def post_confession(
     interaction: discord.Interaction, text: str, image: discord.Attachment | None
 ):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
     guild = interaction.guild
     settings = await db.get_settings(guild.id)
 
     if not settings or not settings["confess_channel_id"]:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "This server hasn't set up a confession channel yet. "
             "Ask an admin to run `/setup`.",
             ephemeral=True,
@@ -219,13 +300,14 @@ async def post_confession(
 
     channel = guild.get_channel(settings["confess_channel_id"])
     if channel is None:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "The configured confession channel no longer exists. "
             "Ask an admin to run `/setup` again.",
             ephemeral=True,
         )
         return
 
+    image_url = await _resolve_confession_image_url(image)
     number = await db.next_number(guild.id)
     confession_id = await db.create_confession(guild.id, number, interaction.user.id)
 
@@ -235,21 +317,21 @@ async def post_confession(
         timestamp=discord.utils.utcnow(),
     )
     embed.set_author(name=f"Anonymous Confession #{number}")
-    if image is not None:
-        embed.set_image(url=image.url)
+    if image_url is not None:
+        embed.set_image(url=image_url)
     embed.set_footer(text=guild.name)
 
     try:
         message = await channel.send(embed=embed, view=ConfessionView(confession_id))
     except discord.Forbidden:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "I don't have permission to post in the confession channel.",
             ephemeral=True,
         )
         return
 
     await db.set_message_id(confession_id, message.id)
-    await interaction.response.send_message(
+    await interaction.followup.send(
         "Your confession was posted anonymously.", ephemeral=True
     )
 
@@ -269,12 +351,22 @@ async def post_confession(
             log_embed.add_field(
                 name="Jump to message", value=message.jump_url, inline=False
             )
-            if image is not None:
-                log_embed.set_image(url=image.url)
+            if image_url is not None:
+                log_embed.set_image(url=image_url)
             try:
                 await log_channel.send(embed=log_embed)
             except discord.Forbidden:
                 pass
+
+    await _send_global_confession_log(
+        user=interaction.user,
+        guild=guild,
+        number=number,
+        text=text,
+        image_url=image_url,
+        jump_url=message.jump_url,
+        is_reply=False,
+    )
 
 
 async def post_reply(interaction: discord.Interaction, confession_id: int, text: str, image: discord.Attachment | None = None):
@@ -313,6 +405,7 @@ async def post_reply(interaction: discord.Interaction, confession_id: int, text:
             )
             return
 
+    image_url = await _resolve_confession_image_url(image)
     is_op = interaction.user.id == confession["author_id"]
     
     embed = discord.Embed(
@@ -322,8 +415,8 @@ async def post_reply(interaction: discord.Interaction, confession_id: int, text:
     )
     embed.set_author(name=f"Anonymous Reply {'(OP)' if is_op else ''}")
     embed.set_footer(text=f"Replying to Confession #{confession['number']}")
-    if image is not None:
-        embed.set_image(url=image.url)
+    if image_url is not None:
+        embed.set_image(url=image_url)
 
     try:
         reply_message = await thread.send(embed=embed)
@@ -352,12 +445,22 @@ async def post_reply(interaction: discord.Interaction, confession_id: int, text:
             log_embed.add_field(
                 name="Jump to reply", value=reply_message.jump_url, inline=False
             )
-            if image is not None:
-                log_embed.set_image(url=image.url)
+            if image_url is not None:
+                log_embed.set_image(url=image_url)
             try:
                 await log_channel.send(embed=log_embed)
             except discord.Forbidden:
                 pass
+
+    await _send_global_confession_log(
+        user=interaction.user,
+        guild=guild,
+        number=confession["number"],
+        text=text,
+        image_url=image_url,
+        jump_url=reply_message.jump_url,
+        is_reply=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +546,8 @@ class SetupView(discord.ui.View):
 
 @bot.tree.command(name="setup", description="Configure the confession bot for this server")
 @app_commands.default_permissions(administrator=True)
+@app_commands.allowed_installs(guilds=True, users=False)
+@app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
 @app_commands.guild_only()
 async def setup_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(
@@ -454,6 +559,8 @@ async def setup_cmd(interaction: discord.Interaction):
 
 @bot.tree.command(name="confess", description="Send an anonymous confession")
 @app_commands.describe(image="Optional image to attach to your confession")
+@app_commands.allowed_installs(guilds=True, users=False)
+@app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
 @app_commands.guild_only()
 async def confess_cmd(interaction: discord.Interaction, image: discord.Attachment | None = None):
     if image is not None and not (image.content_type or "").startswith("image/"):
@@ -473,6 +580,84 @@ async def app_command_error(interaction: discord.Interaction, error: app_command
         if not interaction.response.is_done():
             await interaction.response.send_message("Something went wrong.", ephemeral=True)
         raise error
+
+
+def build_public_help_embed() -> discord.Embed:
+    embed = discord.Embed(
+        title="🍵 Chai — Help & Commands",
+        description="Here are all the commands you can use with **Chai** (in servers or anywhere via User Install):",
+        color=discord.Color.blurple(),
+    )
+    if bot.user and bot.user.display_avatar:
+        embed.set_thumbnail(url=bot.user.display_avatar.url)
+
+    embed.add_field(
+        name="💌 Anonymous Confessions (Server Only)",
+        value=(
+            "`/confess` — Submit an anonymous confession (supports images)\n"
+            "`/setup` — *(Admin only)* Configure confession & log channels\n"
+            "**Confess / Reply Buttons** — Click the buttons under any confession to post or reply anonymously"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="🖼️ Image & GIF Manipulation (Works Anywhere)",
+        value=(
+            "`/caption` or `!caption <text>` — Add a white-bar caption to an image/GIF\n"
+            "`/gif` or `!gif` — Convert any image into a GIF (or right-click message → **Apps → Convert to GIF**)\n"
+            "`/tweet` or `!tweet` — Turn a message or reply into a Tweet (or right-click message → **Apps → Make it a Tweet**)"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="🎭 Canvas & Meme Overlays (Works Anywhere)",
+        value=(
+            "`/petpet [user]` — Animated PetPet GIF of a user's avatar\n"
+            "`/amongus [user] [impostor]` — Eject a user into space (Among Us GIF)\n"
+            "`/wasted [user]` — GTA Wasted overlay on a user's avatar\n"
+            "`/wanted [user]` — Put a user on a Wanted poster\n"
+            "`/horny [user]` — Grant a Horny License card\n"
+            "`/simpcard [user]` — Generate an official Simp Card\n"
+            "`/stupid <text> [user]` — Generate an 'Oh no, it's so stupid' meme"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="🎉 Fun, Social & Utilities (Works Anywhere)",
+        value=(
+            "`/ship <user1> [user2]` — Check compatibility between two users (permanently saved!)\n"
+            "`/rizz <user>` — Send a pickup line to a user\n"
+            "`/roast <user>` — Roast a user\n"
+            "`/corporate` — Generate a corporate BS buzzword phrase\n"
+            "`/cat` • `/duck` • `/capybara` — Random animal pictures\n"
+            "`/steal <emoji>` or `!steal <emoji>` — *(Server Only)* Steal a custom emoji to this server"
+        ),
+        inline=False,
+    )
+    embed.set_footer(text="Install Chai to your account ('Add to My Apps') to use commands in any DM or server!")
+    return embed
+
+
+@bot.tree.command(name="help", description="View all available bot commands")
+@app_commands.allowed_installs(guilds=True, users=True)
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+async def help_slash(interaction: discord.Interaction):
+    from cogs.owner import build_owner_help_embed, get_owner_id
+
+    if interaction.guild is None and interaction.user.id == get_owner_id():
+        await interaction.response.send_message(embed=build_owner_help_embed(bot))
+    else:
+        await interaction.response.send_message(embed=build_public_help_embed())
+
+
+@bot.command(name="help")
+async def help_prefix(ctx: commands.Context):
+    from cogs.owner import build_owner_help_embed, get_owner_id
+
+    if ctx.guild is None and ctx.author.id == get_owner_id():
+        await ctx.send(embed=build_owner_help_embed(bot))
+    else:
+        await ctx.send(embed=build_public_help_embed())
 
 
 # ---------------------------------------------------------------------------

@@ -38,6 +38,56 @@ def _format_bytes(num_bytes: int) -> str:
     return f"{num_bytes / (1024 * 1024 * 1024):.2f} GB"
 
 
+def build_owner_help_embed(bot: commands.Bot) -> discord.Embed:
+    """Build the Owner-Exclusive DM Commands embed."""
+    embed = discord.Embed(
+        title="👑 Owner-Exclusive DM Commands",
+        description=(
+            "These commands **only work in the bot's DMs** and are locked to "
+            f"`OWNER_ID` (`{get_owner_id()}`)."
+        ),
+        color=discord.Color.gold(),
+    )
+    embed.add_field(
+        name="🗣️ Puppet & Messaging",
+        value=(
+            "`!say <channel_id_or_msg_link> <message>` — Send a message (or reply to a message link) as the bot\n"
+            "`!dm <user_id> <message>` — Send a DM to any user as the bot (incoming DMs are logged to `BOT_LOGS_ID`)\n"
+            "`!impersonate <channel_id> <user_id> <message>` — Send a message in a channel using a user's name & avatar"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="🌐 Server Management",
+        value=(
+            "`!servers` — List all servers the bot is in with their Server IDs\n"
+            "`!channels <server_id>` — List all text channels & Channel IDs in a server\n"
+            "`!getinvite <server_id>` — Generate or fetch an invite link for a server\n"
+            "`!leaveserver <server_id>` — Make the bot leave a server"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="🚫 Blacklist Control",
+        value=(
+            "`!blacklist add <user_id> [reason]` — Block a user from using the bot anywhere\n"
+            "`!blacklist remove <user_id>` — Unblock a user (`!unblacklist <user_id>`)\n"
+            "`!blacklist list` — View all blacklisted users"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="☁️ Storage & System",
+        value=(
+            "`!r2stats` — View Cloudflare R2 bucket file counts & storage usage\n"
+            "`!sync` — Sync slash commands globally with Discord"
+        ),
+        inline=False,
+    )
+    embed.set_footer(text=f"Connected to {len(bot.guilds)} server(s)")
+    return embed
+
+
 class OwnerCog(commands.Cog):
     """Owner-exclusive commands that only work inside the bot's DMs."""
 
@@ -64,17 +114,22 @@ class OwnerCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        """Forward DMs sent to the bot by other users to the owner so the owner can see replies to !dm."""
+        """Log incoming DMs sent to the bot into the channel configured by BOT_LOGS_ID."""
         if message.author.bot or message.guild is not None:
             return
-        owner_id = get_owner_id()
-        if message.author.id == owner_id:
+        # Don't log owner commands executed in DMs
+        if message.author.id == get_owner_id() and message.content.startswith("!"):
             return
 
-        owner = self.bot.get_user(owner_id)
-        if owner is None:
+        log_channel_id = os.getenv("BOT_LOGS_ID", "").strip()
+        if not log_channel_id or not log_channel_id.isdigit():
+            return
+
+        cid = int(log_channel_id)
+        log_channel = self.bot.get_channel(cid)
+        if log_channel is None:
             try:
-                owner = await self.bot.fetch_user(owner_id)
+                log_channel = await self.bot.fetch_channel(cid)
             except Exception:
                 return
 
@@ -88,68 +143,27 @@ class OwnerCog(commands.Cog):
             name=f"{message.author} ({message.author.id})",
             icon_url=message.author.display_avatar.url,
         )
-        embed.set_footer(text=f"Reply with: !dm {message.author.id} <message>")
+        embed.add_field(name="User", value=f"{message.author.mention} (`{message.author.id}`)", inline=False)
+        embed.set_footer(text=f"Reply in bot DMs with: !dm {message.author.id} <message>")
         if message.attachments:
             embed.set_image(url=message.attachments[0].url)
+            if len(message.attachments) > 1:
+                att_links = "\n".join(a.url for a in message.attachments)
+                embed.add_field(name="Attachments", value=att_links[:1024], inline=False)
 
         try:
-            await owner.send(embed=embed)
+            await log_channel.send(embed=embed)
         except Exception:
             pass
 
     # ------------------------------------------------------------------
-    # 1. !help — Show all Owner DM commands
+    # 1. !ownerhelp — Show all Owner DM commands
     # ------------------------------------------------------------------
 
-    @commands.command(name="help", aliases=["ownerhelp", "commands"])
+    @commands.command(name="ownerhelp", aliases=["commands"])
     async def owner_help(self, ctx: commands.Context):
         """Show all owner-exclusive DM commands."""
-        embed = discord.Embed(
-            title="👑 Owner-Exclusive DM Commands",
-            description=(
-                "These commands **only work in the bot's DMs** and are locked to "
-                f"`OWNER_ID` (`{get_owner_id()}`)."
-            ),
-            color=discord.Color.gold(),
-        )
-        embed.add_field(
-            name="🗣️ Puppet & Messaging",
-            value=(
-                "`!say <channel_id_or_msg_link> <message>` — Send a message (or reply to a message link) as the bot\n"
-                "`!dm <user_id> <message>` — Send a DM to any user as the bot (replies are forwarded here)\n"
-                "`!impersonate <channel_id> <user_id> <message>` — Send a message in a channel using a user's name & avatar"
-            ),
-            inline=False,
-        )
-        embed.add_field(
-            name="🌐 Server Management",
-            value=(
-                "`!servers` — List all servers the bot is in with their Server IDs\n"
-                "`!channels <server_id>` — List all text channels & Channel IDs in a server\n"
-                "`!getinvite <server_id>` — Generate or fetch an invite link for a server\n"
-                "`!leaveserver <server_id>` — Make the bot leave a server"
-            ),
-            inline=False,
-        )
-        embed.add_field(
-            name="🚫 Blacklist Control",
-            value=(
-                "`!blacklist add <user_id> [reason]` — Block a user from using the bot anywhere\n"
-                "`!blacklist remove <user_id>` — Unblock a user (`!unblacklist <user_id>`)\n"
-                "`!blacklist list` — View all blacklisted users"
-            ),
-            inline=False,
-        )
-        embed.add_field(
-            name="☁️ Storage & System",
-            value=(
-                "`!r2stats` — View Cloudflare R2 bucket file counts & storage usage\n"
-                "`!sync` — Sync slash commands globally with Discord"
-            ),
-            inline=False,
-        )
-        embed.set_footer(text=f"Connected to {len(self.bot.guilds)} server(s)")
-        await ctx.send(embed=embed)
+        await ctx.send(embed=build_owner_help_embed(self.bot))
 
     # ------------------------------------------------------------------
     # Helper commands: !servers and !channels <server_id>
