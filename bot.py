@@ -18,6 +18,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 async def setup_hook():
     await bot.load_extension("cogs.images")
+    await bot.load_extension("cogs.fun")
 
 bot.setup_hook = setup_hook
 

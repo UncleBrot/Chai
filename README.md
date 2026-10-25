@@ -77,13 +77,20 @@ python bot.py
 | Confess button | Persistent button on confession messages to submit a new confession |
 | Reply button | Persistent button to reply anonymously in a confession thread |
 
-### Image Commands
+### Image & Fun Commands
 | Command | Description |
 |---|---|
-| `!caption <text>` | Caption the replied image with a white bar |
-| `/caption image: text:` | Caption an uploaded image |
-| `!gif` | Convert the replied image to a GIF |
-| `/gif image:` | Convert an uploaded image to a GIF |
+| `!caption <text>` / `/caption` | Caption an image with a classic white bar |
+| `!gif` / `/gif` | Convert an image to a GIF (uploaded to Cloudflare R2) |
+| `!tweet` / `/tweet` / **Make it a Tweet** | Turn a replied message or text (with custom emojis & attachments) into an X/Twitter card |
+| `!petpet [@user]` / `/petpet` | Generate an animated PetPet GIF of a user's avatar |
+| `!wanted [@user]` / `/wanted` | Put a user on a Wanted poster |
+| `!ship <@user1> [@user2]` / `/ship` | Ship two users together (compatibility score permanently saved in SQLite) |
+| `!rizz [@user]` / `/rizz` | Send a pickup line to a user |
+| `!roast [@user]` / `/roast` | Roast a user |
+| `!corporate` / `/corporate` | Generate a corporate BS buzzword phrase |
+| `!cat` / `/cat`, `!duck` / `/duck`, `!capybara` / `/capybara` | Fetch a random cat, duck, or capybara photo |
+| `!steal <emoji>` / `/steal` | *(Manage Expressions)* Steal a custom emoji from another server |
 
 ### Owner / Dev Commands
 | Command | Description |
@@ -97,9 +104,10 @@ python bot.py
 ```
 .
 ├── bot.py              # Main bot entry point
-├── database.py         # Async SQLite helpers for confessions
+├── database.py         # Async SQLite helpers for confessions & ships
 ├── cogs/
-│   └── images.py       # Image manipulation commands (caption, gif)
+│   ├── images.py       # Image manipulation commands (caption, gif)
+│   └── fun.py          # Tweet, petpet, ship, rizz, roast, animals & steal commands
 ├── utils/
 │   └── r2.py           # Cloudflare R2 upload client
 ├── Dockerfile

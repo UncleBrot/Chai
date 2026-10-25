@@ -1,4 +1,5 @@
 import os
+import random
 import aiosqlite
 
 DB_PATH = os.getenv("DB_PATH", "confessions.db")
@@ -31,7 +32,38 @@ async def init_db():
             )
             """
         )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ships (
+                user1_id INTEGER NOT NULL,
+                user2_id INTEGER NOT NULL,
+                percentage INTEGER NOT NULL,
+                PRIMARY KEY (user1_id, user2_id)
+            )
+            """
+        )
         await conn.commit()
+
+
+async def get_or_create_ship(user1_id: int, user2_id: int) -> int:
+    """Return the saved compatibility percentage for two users, creating it if needed."""
+    u1, u2 = min(user1_id, user2_id), max(user1_id, user2_id)
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cursor = await conn.execute(
+            "SELECT percentage FROM ships WHERE user1_id = ? AND user2_id = ?",
+            (u1, u2),
+        )
+        row = await cursor.fetchone()
+        if row is not None:
+            return row[0]
+
+        percentage = 100 if u1 == u2 else random.randint(0, 100)
+        await conn.execute(
+            "INSERT INTO ships (user1_id, user2_id, percentage) VALUES (?, ?, ?)",
+            (u1, u2, percentage),
+        )
+        await conn.commit()
+        return percentage
 
 
 async def _ensure_guild_row(conn, guild_id: int):
@@ -122,3 +154,4 @@ async def get_confession(confession_id: int):
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
+
