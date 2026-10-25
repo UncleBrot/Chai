@@ -8,9 +8,12 @@ services:
     restart: unless-stopped
     environment:
       - Discord_Token=${Discord_Token}
+      - OWNER_ID=${OWNER_ID:-762609713610620948}
       - DB_PATH=/data/confessions.db
-      # Image logging (channel ID in your dev server)
+      # Logging channels
       - img_log_id=${img_log_id}
+      - G_CONFESSION_LOG=${G_CONFESSION_LOG:-1563882927593619456}
+      - BOT_LOGS_ID=${BOT_LOGS_ID:-1563881722557239316}
       # Cloudflare R2 storage
       - R2_ENDPOINT_URL=${R2_ENDPOINT_URL}
       - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}

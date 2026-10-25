@@ -233,6 +233,9 @@ async def _resolve_confession_image_url(image: discord.Attachment | None) -> str
         return image.url
 
 
+DEFAULT_G_CONFESSION_LOG = 1563882927593619456
+
+
 async def _send_global_confession_log(
     user: discord.User | discord.Member,
     guild: discord.Guild,
@@ -244,15 +247,14 @@ async def _send_global_confession_log(
 ):
     """Send every confession (and reply) from any server to the global G_CONFESSION_LOG channel."""
     raw_id = os.getenv("G_CONFESSION_LOG", "").strip()
-    if not raw_id or not raw_id.isdigit():
-        return
+    cid = int(raw_id) if (raw_id and raw_id.isdigit()) else DEFAULT_G_CONFESSION_LOG
 
-    cid = int(raw_id)
     g_channel = bot.get_channel(cid)
     if g_channel is None:
         try:
             g_channel = await bot.fetch_channel(cid)
-        except Exception:
+        except Exception as e:
+            print(f"Failed to fetch global confession log channel {cid}: {e}")
             return
 
     title = f"💌 Global Confession Reply (#{number})" if is_reply else f"💌 Global Confession (#{number})"
@@ -278,8 +280,8 @@ async def _send_global_confession_log(
 
     try:
         await g_channel.send(embed=g_embed)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Failed to send global confession log to {cid}: {e}")
 
 
 async def post_confession(

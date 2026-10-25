@@ -122,15 +122,14 @@ class OwnerCog(commands.Cog):
             return
 
         log_channel_id = os.getenv("BOT_LOGS_ID", "").strip()
-        if not log_channel_id or not log_channel_id.isdigit():
-            return
+        cid = int(log_channel_id) if (log_channel_id and log_channel_id.isdigit()) else 1563881722557239316
 
-        cid = int(log_channel_id)
         log_channel = self.bot.get_channel(cid)
         if log_channel is None:
             try:
                 log_channel = await self.bot.fetch_channel(cid)
-            except Exception:
+            except Exception as e:
+                print(f"Failed to fetch bot DM log channel {cid}: {e}")
                 return
 
         embed = discord.Embed(
@@ -153,8 +152,8 @@ class OwnerCog(commands.Cog):
 
         try:
             await log_channel.send(embed=embed)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Failed to send bot DM log to {cid}: {e}")
 
     # ------------------------------------------------------------------
     # 1. !ownerhelp — Show all Owner DM commands
